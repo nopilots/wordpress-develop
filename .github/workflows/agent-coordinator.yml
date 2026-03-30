@@ -1,0 +1,83 @@
+name: Agent Coordinator
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+concurrency:
+  group: agent-coordinator
+  cancel-in-progress: true
+
+jobs:
+  coordinate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Assign ready issues to Copilot
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // Check open agent issue count against governance limit
+            const { data: allAgentIssues } = await github.rest.issues.listForRepo({
+              owner, repo,
+              state: 'open',
+              labels: 'agent',
+              per_page: 100,
+            });
+
+            if (allAgentIssues.length >= 20) {
+              core.info(`Open agent issues (${allAgentIssues.length}) at limit. Skipping.`);
+              return;
+            }
+
+            // Find unassigned issues labeled status:ready
+            const { data: readyIssues } = await github.rest.issues.listForRepo({
+              owner, repo,
+              state: 'open',
+              labels: 'status:ready',
+              per_page: 100,
+            });
+
+            const unassigned = readyIssues.filter(i => i.assignees.length === 0);
+
+            if (unassigned.length === 0) {
+              core.info('No unassigned ready issues found.');
+              return;
+            }
+
+            // Assign up to 3 at a time
+            for (const issue of unassigned.slice(0, 3)) {
+              try {
+                await github.rest.issues.addAssignees({
+                  owner, repo,
+                  issue_number: issue.number,
+                  assignees: ['copilot'],
+                });
+
+                await github.rest.issues.addLabels({
+                  owner, repo,
+                  issue_number: issue.number,
+                  labels: ['status:in-progress'],
+                });
+
+                await github.rest.issues.removeLabel({
+                  owner, repo,
+                  issue_number: issue.number,
+                  name: 'status:ready',
+                }).catch(() => {});
+
+                core.info(`Assigned issue #${issue.number} to Copilot.`);
+              } catch (e) {
+                core.warning(`Failed to assign issue #${issue.number}: ${e.message}`);
+              }
+            }

@@ -1,0 +1,118 @@
+name: Agent Safety
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+  contents: read
+  actions: read
+
+jobs:
+  safety-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run safety checks
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            let halt = false;
+            const reasons = [];
+
+            // 1. Check open agent issue count
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner, repo,
+              state: 'open',
+              labels: 'agent',
+              per_page: 100,
+            });
+            if (issues.length > 20) {
+              halt = true;
+              reasons.push(`Open agent issues: ${issues.length} (limit: 20)`);
+            }
+
+            // 2. Check open agent PR count
+            const { data: prs } = await github.rest.pulls.list({
+              owner, repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const agentPRs = prs.filter(p =>
+              p.head.ref.startsWith('agent/') ||
+              p.labels.some(l => l.name === 'agent')
+            );
+            if (agentPRs.length > 10) {
+              halt = true;
+              reasons.push(`Open agent PRs: ${agentPRs.length} (limit: 10)`);
+            }
+
+            // 3. Loop detection: PRs with >3 failed CI runs
+            for (const pr of agentPRs) {
+              const { data: checks } = await github.rest.checks.listForRef({
+                owner, repo,
+                ref: pr.head.sha,
+              });
+              const failures = checks.check_runs.filter(c =>
+                c.conclusion === 'failure'
+              );
+              if (failures.length > 3) {
+                reasons.push(`PR #${pr.number} has ${failures.length} failed checks — loop suspected`);
+                await github.rest.issues.addLabels({
+                  owner, repo,
+                  issue_number: pr.number,
+                  labels: ['safety:halt'],
+                });
+              }
+            }
+
+            // 4. Check workflow run rate
+            const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+            const { data: runs } = await github.rest.actions.listWorkflowRunsForRepo({
+              owner, repo,
+              created: `>=${oneHourAgo}`,
+              per_page: 100,
+            });
+            const agentRuns = runs.workflow_runs.filter(r =>
+              r.name.startsWith('Agent')
+            );
+            if (agentRuns.length > 50) {
+              halt = true;
+              reasons.push(`Agent workflow runs in last hour: ${agentRuns.length} (limit: 50)`);
+            }
+
+            // 5. Halt if needed
+            if (halt) {
+              core.setFailed(`Safety halt: ${reasons.join('; ')}`);
+
+              for (const pr of agentPRs) {
+                await github.rest.issues.addLabels({
+                  owner, repo,
+                  issue_number: pr.number,
+                  labels: ['safety:halt'],
+                });
+              }
+
+              await github.rest.issues.create({
+                owner, repo,
+                title: '[SAFETY] Circuit breaker activated',
+                body: [
+                  '## Safety Alert',
+                  '',
+                  'The agent safety circuit breaker has been activated.',
+                  '',
+                  '### Reasons:',
+                  ...reasons.map(r => `- ${r}`),
+                  '',
+                  'All agent PRs have been labeled `safety:halt`.',
+                  'A maintainer must review and remove `safety:halt` labels to resume.',
+                ].join('\n'),
+                labels: ['safety:halt', 'agent'],
+              });
+            } else {
+              core.info(`Safety OK. Issues: ${issues.length}, PRs: ${agentPRs.length}, Runs: ${agentRuns.length}`);
+            }
