@@ -2583,4 +2583,42 @@ class Tests_REST_API extends WP_UnitTestCase {
 			throw $e; // Re-throw to satisfy expectException
 		}
 	}
+
+	/**
+	 * Tests that get_rest_url() with an explicit null blog ID returns the
+	 * same URL as without a blog ID on a single-site install.
+	 */
+	public function test_get_rest_url_with_null_blog_id() {
+		$this->set_permalink_structure( '/%year%/%monthnum%/%day%/%postname%/' );
+		$this->assertSame( get_rest_url(), get_rest_url( null ) );
+
+		$this->set_permalink_structure( '' );
+		$this->assertSame( get_rest_url(), get_rest_url( null ) );
+	}
+
+	/**
+	 * Tests that get_rest_url() returns the correct URL with a custom path
+	 * for both pretty and non-pretty permalink structures.
+	 */
+	public function test_get_rest_url_with_custom_path() {
+		$this->set_permalink_structure( '/%year%/%monthnum%/%day%/%postname%/' );
+		$url = get_rest_url( null, '/wp/v2/posts' );
+		$this->assertStringContainsString( '/wp-json/wp/v2/posts', $url );
+
+		$this->set_permalink_structure( '' );
+		$url = get_rest_url( null, '/wp/v2/posts' );
+		$this->assertStringContainsString( 'rest_route=/wp/v2/posts', $url );
+	}
+
+	/**
+	 * Tests that get_rest_url() with the current blog ID returns the same
+	 * URL as without a blog ID.
+	 */
+	public function test_get_rest_url_with_current_blog_id() {
+		$this->set_permalink_structure( '/%year%/%monthnum%/%day%/%postname%/' );
+		$this->assertSame( get_rest_url(), get_rest_url( get_current_blog_id() ) );
+
+		$this->set_permalink_structure( '' );
+		$this->assertSame( get_rest_url(), get_rest_url( get_current_blog_id() ) );
+	}
 }
