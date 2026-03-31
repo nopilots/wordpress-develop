@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 jobs:
   sync:
@@ -24,7 +25,49 @@ jobs:
           fetch-depth: 0
 
       - name: Fast-forward autopilot from trunk
+        id: merge
         run: |
           git fetch origin trunk
-          git merge origin/trunk --ff-only || echo "::warning::Cannot fast-forward autopilot from trunk. Manual merge may be needed."
-          git push origin autopilot
+          if git merge origin/trunk --ff-only; then
+            git push origin autopilot
+            echo "result=success" >> $GITHUB_OUTPUT
+          else
+            echo "result=conflict" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create conflict resolution issue
+        if: steps.merge.outputs.result == 'conflict'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: existing } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'type:conflict',
+              per_page: 5,
+            });
+
+            if (existing.length > 0) {
+              core.info('Conflict issue already open.');
+              return;
+            }
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'Resolve upstream merge conflict on autopilot',
+              body: [
+                'The daily sync from `trunk` (upstream WordPress) cannot fast-forward into `autopilot`.',
+                '',
+                'Agent work on `autopilot` has diverged from upstream.',
+                '',
+                '## Task',
+                '',
+                '1. Merge `trunk` into `autopilot` resolving any conflicts',
+                '2. Prefer upstream changes unless agent work is clearly intentional',
+                '3. Ensure all tests pass after resolution',
+                '4. Open a PR targeting `autopilot` with the merge',
+              ].join('\n'),
+              labels: ['agent', 'type:conflict', 'status:ready'],
+            });

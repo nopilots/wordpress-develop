@@ -22,12 +22,14 @@ jobs:
 
       - name: Assign ready issues to agents
         uses: actions/github-script@v7
+        env:
+          COPILOT_PAT: ${{ secrets.COPILOT_PAT }}
         with:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
 
-            // Check open agent issue count against governance limit
+            // Check open agent issue count
             const { data: allAgentIssues } = await github.rest.issues.listForRepo({
               owner, repo,
               state: 'open',
@@ -36,11 +38,11 @@ jobs:
             });
 
             if (allAgentIssues.length >= 20) {
-              core.info(`Open agent issues (${allAgentIssues.length}) at limit. Skipping.`);
+              core.info(`Open agent issues (${allAgentIssues.length}) at limit.`);
               return;
             }
 
-            // Find unassigned issues labeled status:ready
+            // Find unassigned status:ready issues
             const { data: readyIssues } = await github.rest.issues.listForRepo({
               owner, repo,
               state: 'open',
@@ -51,19 +53,93 @@ jobs:
             const unassigned = readyIssues.filter(i => i.assignees.length === 0);
 
             if (unassigned.length === 0) {
-              core.info('No unassigned ready issues found.');
+              core.info('No unassigned ready issues.');
               return;
             }
 
-            // Assign up to 3 at a time
+            // Use PAT for Copilot assignment (default GITHUB_TOKEN can't do it)
+            const pat = process.env.COPILOT_PAT;
+            if (!pat) {
+              core.warning('COPILOT_PAT secret not set. Cannot invoke agents.');
+              return;
+            }
+
+            const graphql = async (query) => {
+              const res = await fetch('https://api.github.com/graphql', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${pat}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ query }),
+              });
+              return res.json();
+            };
+
+            // Find copilot-swe-agent ID
+            const actorsResult = await graphql(`{
+              repository(owner: "${owner}", name: "${repo}") {
+                suggestedActors(first: 100, capabilities: CAN_BE_ASSIGNED) {
+                  nodes {
+                    ... on Bot { id login }
+                  }
+                }
+              }
+            }`);
+
+            const actors = actorsResult?.data?.repository?.suggestedActors?.nodes || [];
+            const copilot = actors.find(a => a.login === 'copilot-swe-agent');
+
+            if (!copilot) {
+              core.warning('copilot-swe-agent not found as assignable actor.');
+              return;
+            }
+
+            core.info(`Found copilot-swe-agent: ${copilot.id}`);
+
+            // Assign up to 3 issues
             for (const issue of unassigned.slice(0, 3)) {
               try {
-                await github.rest.issues.addAssignees({
-                  owner, repo,
-                  issue_number: issue.number,
-                  assignees: ['copilot'],
-                });
+                // Get issue node ID and current assignees
+                const issueResult = await graphql(`{
+                  repository(owner: "${owner}", name: "${repo}") {
+                    issue(number: ${issue.number}) {
+                      id
+                      assignees(first: 50) { nodes { id } }
+                    }
+                  }
+                }`);
 
+                const issueData = issueResult?.data?.repository?.issue;
+                if (!issueData) {
+                  core.warning(`Could not get details for issue #${issue.number}`);
+                  continue;
+                }
+
+                const currentAssignees = issueData.assignees.nodes.map(a => a.id);
+                if (currentAssignees.includes(copilot.id)) {
+                  core.info(`Issue #${issue.number} already assigned to Copilot.`);
+                  continue;
+                }
+
+                const actorIds = JSON.stringify([copilot.id, ...currentAssignees]);
+
+                // Assign copilot-swe-agent
+                const assignResult = await graphql(`
+                  mutation {
+                    replaceActorsForAssignable(input: {
+                      assignableId: "${issueData.id}",
+                      actorIds: ${actorIds}
+                    }) { __typename }
+                  }
+                `);
+
+                if (assignResult?.errors) {
+                  core.warning(`Failed to assign #${issue.number}: ${assignResult.errors[0].message}`);
+                  continue;
+                }
+
+                // Update labels
                 await github.rest.issues.addLabels({
                   owner, repo,
                   issue_number: issue.number,
@@ -76,8 +152,8 @@ jobs:
                   name: 'status:ready',
                 }).catch(() => {});
 
-                core.info(`Assigned issue #${issue.number} to agent.`);
+                core.info(`Assigned issue #${issue.number} to copilot-swe-agent.`);
               } catch (e) {
-                core.warning(`Failed to assign issue #${issue.number}: ${e.message}`);
+                core.warning(`Error on issue #${issue.number}: ${e.message}`);
               }
             }

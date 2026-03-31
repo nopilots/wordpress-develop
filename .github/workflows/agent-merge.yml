@@ -1,0 +1,69 @@
+name: Agent Merge
+
+on:
+  pull_request_review:
+    types: [submitted]
+  check_suite:
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  enable-auto-merge:
+    runs-on: ubuntu-latest
+    if: >
+      (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') ||
+      github.event_name == 'check_suite'
+    steps:
+      - name: Enable auto-merge on approved PRs
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // Get PRs targeting autopilot
+            const { data: prs } = await github.rest.pulls.list({
+              owner, repo,
+              state: 'open',
+              base: 'autopilot',
+              per_page: 20,
+            });
+
+            for (const pr of prs) {
+              // Skip halted PRs
+              if (pr.labels.some(l => l.name === 'safety:halt')) continue;
+
+              // Check for at least 1 approval from someone other than author
+              const { data: reviews } = await github.rest.pulls.listReviews({
+                owner, repo,
+                pull_number: pr.number,
+              });
+
+              const hasApproval = reviews.some(r =>
+                r.state === 'APPROVED' && r.user.login !== pr.user.login
+              );
+
+              if (!hasApproval) continue;
+
+              // Enable auto-merge via GraphQL
+              try {
+                await github.graphql(`
+                  mutation($prId: ID!) {
+                    enablePullRequestAutoMerge(input: {
+                      pullRequestId: $prId,
+                      mergeMethod: SQUASH
+                    }) {
+                      pullRequest { number }
+                    }
+                  }
+                `, { prId: pr.node_id });
+
+                core.info(`Enabled auto-merge on PR #${pr.number}`);
+              } catch (e) {
+                // Auto-merge may already be enabled or not available
+                core.info(`PR #${pr.number}: ${e.message}`);
+              }
+            }
