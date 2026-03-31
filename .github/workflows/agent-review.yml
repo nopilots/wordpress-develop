@@ -14,6 +14,9 @@ permissions:
 jobs:
   request-review:
     runs-on: ubuntu-latest
+    concurrency:
+      group: agent-review-create-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     if: >
       github.event_name == 'pull_request_target' &&
       (github.event.pull_request.draft == false || github.event.action == 'ready_for_review') &&
@@ -27,17 +30,16 @@ jobs:
             const repo = context.repo.repo;
             const pr = context.payload.pull_request;
 
-            // Prevent loops: check if this PR was opened from a review-task issue
-            const prBody = pr.body || '';
+            // Prevent loops
             if (pr.labels?.some(l => l.name === 'type:review-task')) {
               core.info('PR is from a review task. Skipping.');
               return;
             }
 
-            // Check if review issue already exists
+            // Check if review issue already exists (open or closed)
             const { data: existing } = await github.rest.issues.listForRepo({
               owner, repo,
-              state: 'open',
+              state: 'all',
               labels: 'type:review-task',
               per_page: 100,
             });
@@ -69,6 +71,9 @@ jobs:
 
   close-review-issue:
     runs-on: ubuntu-latest
+    concurrency:
+      group: agent-review-close-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     if: github.event_name == 'pull_request_review'
     steps:
       - name: Close completed review issues

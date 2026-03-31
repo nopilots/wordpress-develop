@@ -60,7 +60,20 @@ jobs:
             // Use PAT for Copilot assignment (default GITHUB_TOKEN can't do it)
             const pat = process.env.COPILOT_PAT;
             if (!pat) {
-              core.warning('COPILOT_PAT secret not set. Cannot invoke agents.');
+              // Check if we already have a PAT alert issue open
+              const { data: patIssues } = await github.rest.issues.listForRepo({
+                owner, repo, state: 'open', per_page: 50,
+              });
+              const hasAlert = patIssues.some(i => i.title.includes('[CRITICAL] COPILOT_PAT'));
+              if (!hasAlert) {
+                await github.rest.issues.create({
+                  owner, repo,
+                  title: '[CRITICAL] COPILOT_PAT secret missing or expired',
+                  body: 'The coordinator cannot assign agents because `COPILOT_PAT` is not set or has expired. A maintainer must create a new fine-grained PAT and add it as a repository secret.',
+                  labels: ['safety:halt'],
+                });
+              }
+              core.setFailed('COPILOT_PAT not set.');
               return;
             }
 
@@ -86,6 +99,24 @@ jobs:
                 }
               }
             }`);
+
+            // Check for auth failure
+            if (actorsResult?.message === 'Bad credentials' || actorsResult?.errors?.[0]?.type === 'FORBIDDEN') {
+              const { data: patIssues } = await github.rest.issues.listForRepo({
+                owner, repo, state: 'open', per_page: 50,
+              });
+              const hasAlert = patIssues.some(i => i.title.includes('[CRITICAL] COPILOT_PAT'));
+              if (!hasAlert) {
+                await github.rest.issues.create({
+                  owner, repo,
+                  title: '[CRITICAL] COPILOT_PAT expired or invalid',
+                  body: 'The coordinator received an authentication error from the GitHub API. The `COPILOT_PAT` secret needs to be rotated.',
+                  labels: ['safety:halt'],
+                });
+              }
+              core.setFailed('COPILOT_PAT authentication failed.');
+              return;
+            }
 
             const actors = actorsResult?.data?.repository?.suggestedActors?.nodes || [];
             const copilot = actors.find(a => a.login === 'copilot-swe-agent');
