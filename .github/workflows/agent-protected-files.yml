@@ -1,0 +1,81 @@
+name: Agent Protected Files
+
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+
+permissions:
+  pull-requests: write
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.base.ref == 'autopilot'
+    steps:
+      - name: Check for protected file changes
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pr = context.payload.pull_request;
+
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner, repo,
+              pull_number: pr.number,
+              per_page: 100,
+            });
+
+            const protectedPaths = [
+              'src/wp-includes/deprecated.php',
+              'SECURITY.md',
+              'wp-config-sample.php',
+              'wp-tests-config-sample.php',
+            ];
+
+            const protectedPrefixes = [
+              'tests/phpunit/includes/',
+            ];
+
+            const violations = [];
+
+            for (const file of files) {
+              if (protectedPaths.includes(file.filename)) {
+                violations.push(file.filename);
+              }
+
+              for (const prefix of protectedPrefixes) {
+                if (file.filename.startsWith(prefix)) {
+                  violations.push(file.filename);
+                }
+              }
+
+              // Non-agent workflows
+              if (file.filename.startsWith('.github/workflows/') &&
+                  !file.filename.includes('agent-') &&
+                  !file.filename.includes('copilot-setup-steps')) {
+                violations.push(file.filename);
+              }
+            }
+
+            if (violations.length === 0) {
+              core.info('No protected files modified.');
+              return;
+            }
+
+            // Request changes
+            await github.rest.pulls.createReview({
+              owner, repo,
+              pull_number: pr.number,
+              event: 'REQUEST_CHANGES',
+              body: `This PR modifies protected files that agents must not change per GOVERNANCE.md:\n\n${violations.map(v => '- `' + v + '`').join('\n')}\n\nPlease remove these changes and resubmit.`,
+            });
+
+            await github.rest.issues.addLabels({
+              owner, repo,
+              issue_number: pr.number,
+              labels: ['safety:halt'],
+            });
+
+            core.setFailed(`Protected files modified: ${violations.join(', ')}`);

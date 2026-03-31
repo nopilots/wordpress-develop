@@ -71,6 +71,8 @@ jobs:
                 `2. Review the PR diff at #${pr.number}`,
                 `3. Check for WordPress coding standards, test coverage, backwards compatibility, and security`,
                 `4. Leave an approving or change-requesting review on the PR with substantive feedback`,
+                '',
+                `**Important:** This review must be done by a different agent than the PR author (\`${pr.user.login}\`).`,
               ].join('\n'),
               labels: ['agent', 'type:review-task', 'status:ready'],
             });
