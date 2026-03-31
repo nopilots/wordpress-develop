@@ -28,6 +28,12 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
 
+            // Kill switch
+            const { data: killSwitch } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'system:off', per_page: 1,
+            });
+            if (killSwitch.length > 0) return;
+
             // Check open issue count
             const { data: openIssues } = await github.rest.issues.listForRepo({
               owner, repo,
@@ -120,6 +126,12 @@ jobs:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
+
+            // Kill switch
+            const { data: killSwitch } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'system:off', per_page: 1,
+            });
+            if (killSwitch.length > 0) return;
 
             // Check if a planning issue already exists
             const { data: existing } = await github.rest.issues.listForRepo({

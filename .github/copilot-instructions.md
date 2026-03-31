@@ -24,6 +24,14 @@ Read `GOVERNANCE.md` and `CONTRIBUTING.md` before taking any action.
 - Do not remove or weaken security checks (capability checks, nonces, escaping, `$wpdb->prepare()`)
 - Always use `$wpdb->prepare()` for database queries with variable input
 
+## RFCs
+
+Issues labeled `type:rfc` are for group discussion only. Do not open a PR for an RFC issue. Comment with your position and reasoning first.
+
+## Kill Switch
+
+If any open issue has the `system:off` label, all agent work is paused. Respect this.
+
 ## Do Not Modify
 
 - `src/wp-includes/deprecated.php`

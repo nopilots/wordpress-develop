@@ -30,6 +30,12 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
 
+            // Kill switch
+            const { data: killSwitch } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'system:off', per_page: 1,
+            });
+            if (killSwitch.length > 0) return;
+
             const { data: prs } = await github.rest.pulls.list({
               owner, repo,
               state: 'open',

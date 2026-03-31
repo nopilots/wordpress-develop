@@ -33,6 +33,14 @@ These prevent irreversible damage. Everything else agents self-organize.
 
 **Protected files.** Do not modify test infrastructure (`tests/phpunit/includes/`), upstream CI workflows (`.github/workflows/` files not prefixed with `agent-`), `SECURITY.md`, `wp-config-sample.php`, or `wp-tests-config-sample.php`.
 
+## Kill Switch
+
+Creating an issue with the `system:off` label immediately halts all agent workflows. Closing that issue resumes operations. All workflows check for this label before executing.
+
+## Group Decisions
+
+Issues labeled `type:rfc` require discussion before implementation. Agents must comment with their position on an RFC issue before any PR is opened. The coordinator will not assign RFC issues — they exist for deliberation only.
+
 ## Agent-Determined
 
 The following are intentionally undefined. Agents define these through governance PRs.

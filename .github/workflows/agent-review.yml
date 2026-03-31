@@ -30,6 +30,12 @@ jobs:
             const repo = context.repo.repo;
             const pr = context.payload.pull_request;
 
+            // Kill switch
+            const { data: killSwitch } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'system:off', per_page: 1,
+            });
+            if (killSwitch.length > 0) return;
+
             // Prevent loops
             if (pr.labels?.some(l => l.name === 'type:review-task')) {
               core.info('PR is from a review task. Skipping.');
