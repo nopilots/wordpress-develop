@@ -1,8 +1,8 @@
 name: Agent Coordinator
 
 on:
-  schedule:
-    - cron: '0 */6 * * *'
+  issues:
+    types: [labeled]
   workflow_dispatch:
 
 permissions:
@@ -16,10 +16,10 @@ concurrency:
 jobs:
   coordinate:
     runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.label.name == 'status:ready')
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
       - name: Assign ready issues to agents
         uses: actions/github-script@v7
         env:
@@ -57,10 +57,9 @@ jobs:
               return;
             }
 
-            // Use PAT for Copilot assignment (default GITHUB_TOKEN can't do it)
+            // Use PAT for Copilot assignment
             const pat = process.env.COPILOT_PAT;
             if (!pat) {
-              // Check if we already have a PAT alert issue open
               const { data: patIssues } = await github.rest.issues.listForRepo({
                 owner, repo, state: 'open', per_page: 50,
               });
@@ -131,7 +130,6 @@ jobs:
             // Assign up to 3 issues
             for (const issue of unassigned.slice(0, 3)) {
               try {
-                // Get issue node ID and current assignees
                 const issueResult = await graphql(`{
                   repository(owner: "${owner}", name: "${repo}") {
                     issue(number: ${issue.number}) {
@@ -155,7 +153,6 @@ jobs:
 
                 const actorIds = JSON.stringify([copilot.id, ...currentAssignees]);
 
-                // Assign copilot-swe-agent
                 const assignResult = await graphql(`
                   mutation {
                     replaceActorsForAssignable(input: {
@@ -170,7 +167,6 @@ jobs:
                   continue;
                 }
 
-                // Update labels
                 await github.rest.issues.addLabels({
                   owner, repo,
                   issue_number: issue.number,

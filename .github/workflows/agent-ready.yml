@@ -1,13 +1,20 @@
 name: Agent Ready
 
 on:
-  schedule:
-    - cron: '0 */2 * * *'
+  workflow_run:
+    workflows: ["Copilot Setup Steps"]
+    types: [completed]
+  pull_request_target:
+    types: [synchronize]
   workflow_dispatch:
 
 permissions:
   pull-requests: write
   contents: read
+
+concurrency:
+  group: agent-ready
+  cancel-in-progress: true
 
 jobs:
   convert-drafts:
@@ -27,7 +34,6 @@ jobs:
               per_page: 20,
             });
 
-            // Match both copilot/ and agent/ branch prefixes
             const drafts = prs.filter(pr =>
               pr.draft && (
                 pr.head.ref.startsWith('copilot/') ||
