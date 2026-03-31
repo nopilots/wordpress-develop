@@ -121,7 +121,19 @@ jobs:
             const copilot = actors.find(a => a.login === 'copilot-swe-agent');
 
             if (!copilot) {
-              core.warning('copilot-swe-agent not found as assignable actor.');
+              const { data: botIssues } = await github.rest.issues.listForRepo({
+                owner, repo, state: 'open', per_page: 50,
+              });
+              const hasAlert = botIssues.some(i => i.title.includes('[CRITICAL] copilot-swe-agent'));
+              if (!hasAlert) {
+                await github.rest.issues.create({
+                  owner, repo,
+                  title: '[CRITICAL] copilot-swe-agent not available',
+                  body: 'The coordinator cannot find `copilot-swe-agent` as an assignable actor. Verify that GitHub Copilot coding agent is enabled for this repository in the org settings.',
+                  labels: ['safety:halt'],
+                });
+              }
+              core.setFailed('copilot-swe-agent not found.');
               return;
             }
 
