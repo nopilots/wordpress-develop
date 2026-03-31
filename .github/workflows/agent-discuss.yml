@@ -96,7 +96,7 @@ jobs:
             }
 
             // Persona order
-            const personas = ['barry', 'dalton', 'aria', 'pat'];
+            const personas = ['barry', 'dalton', 'aria', 'pat', 'scout'];
             const decider = 'captain';
 
             // Count rounds from persona comments
@@ -105,11 +105,12 @@ jobs:
               c.body.startsWith('**Dalton**') ||
               c.body.startsWith('**Aria**') ||
               c.body.startsWith('**Pat**') ||
+              c.body.startsWith('**Scout**') ||
               c.body.startsWith('**Captain**')
             );
 
-            const round = Math.floor(personaComments.length / 4) + 1;
-            const positionInRound = personaComments.length % 4;
+            const round = Math.floor(personaComments.length / 5) + 1;
+            const positionInRound = personaComments.length % 5;
 
             // Max 8 rounds
             if (round > 8) {
@@ -127,7 +128,7 @@ jobs:
             let currentPersona;
             if (personaComments.length > 0 && positionInRound === 0 && round > 1) {
               // End of a full round — check consensus
-              const lastRound = personaComments.slice(-4).map(c => c.body.toLowerCase());
+              const lastRound = personaComments.slice(-5).map(c => c.body.toLowerCase());
               const supportSignals = ['agree', 'approve', 'support', 'looks good', 'no concerns', 'in favor'];
               const blockSignals = ['disagree', 'concern', 'block', 'oppose', 'reject', 'risk'];
 
@@ -138,12 +139,12 @@ jobs:
                 if (hasSupport && !hasBlock) supports++;
               }
 
-              if (supports >= 3 || round >= 8) {
+              if (supports >= 4 || round >= 8) {
                 currentPersona = decider;
               } else {
                 currentPersona = personas[0];
               }
-            } else if (positionInRound < 4) {
+            } else if (positionInRound < 5) {
               currentPersona = personas[positionInRound];
             } else {
               currentPersona = decider;
