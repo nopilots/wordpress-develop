@@ -29,14 +29,15 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Fast-forward autopilot from trunk
+      - name: Merge trunk into autopilot
         id: merge
         run: |
           git fetch origin trunk
-          if git merge origin/trunk --ff-only; then
+          if git merge origin/trunk --no-edit; then
             git push origin autopilot
             echo "result=success" >> $GITHUB_OUTPUT
           else
+            git merge --abort
             echo "result=conflict" >> $GITHUB_OUTPUT
           fi
 
