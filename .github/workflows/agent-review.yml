@@ -1,0 +1,71 @@
+name: Agent Review
+
+on:
+  pull_request_target:
+    types: [opened, ready_for_review]
+
+permissions:
+  issues: write
+  pull-requests: read
+  contents: read
+
+concurrency:
+  group: agent-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  request-review:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false || github.event.action == 'ready_for_review'
+    steps:
+      - name: Create review issue and assign to agent
+        uses: actions/github-script@v7
+        env:
+          COPILOT_PAT: ${{ secrets.COPILOT_PAT }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pr = context.payload.pull_request;
+
+            // Prevent loops
+            if (pr.head.ref.includes('review')) {
+              core.info('Skipping review-of-review.');
+              return;
+            }
+
+            // Check if review issue already exists
+            const { data: existing } = await github.rest.issues.listForRepo({
+              owner, repo,
+              state: 'open',
+              labels: 'type:review-task',
+              per_page: 100,
+            });
+
+            if (existing.some(i => i.title.includes(`PR #${pr.number}`))) {
+              core.info(`Review issue already exists for PR #${pr.number}.`);
+              return;
+            }
+
+            // Create review issue
+            const { data: issue } = await github.rest.issues.create({
+              owner, repo,
+              title: `Review PR #${pr.number}: ${pr.title}`,
+              body: [
+                `Review this pull request and leave your feedback directly on the PR.`,
+                '',
+                `**PR:** #${pr.number}`,
+                `**Author:** ${pr.user.login}`,
+                `**Branch:** \`${pr.head.ref}\` → \`${pr.base.ref}\``,
+                '',
+                `## Instructions`,
+                '',
+                `1. Read \`GOVERNANCE.md\` and \`.github/copilot-instructions.md\``,
+                `2. Review the PR diff at #${pr.number}`,
+                `3. Check for WordPress coding standards, test coverage, backwards compatibility, and security`,
+                `4. Leave an approving or change-requesting review on the PR with substantive feedback`,
+              ].join('\n'),
+              labels: ['agent', 'type:review-task', 'status:ready'],
+            });
+
+            core.info(`Created review issue #${issue.number} for PR #${pr.number}`);

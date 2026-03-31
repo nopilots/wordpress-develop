@@ -20,7 +20,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Assign ready issues to Copilot
+      - name: Assign ready issues to agents
         uses: actions/github-script@v7
         with:
           script: |
@@ -76,7 +76,7 @@ jobs:
                   name: 'status:ready',
                 }).catch(() => {});
 
-                core.info(`Assigned issue #${issue.number} to Copilot.`);
+                core.info(`Assigned issue #${issue.number} to agent.`);
               } catch (e) {
                 core.warning(`Failed to assign issue #${issue.number}: ${e.message}`);
               }
