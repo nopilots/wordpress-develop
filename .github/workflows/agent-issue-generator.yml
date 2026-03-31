@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  generate:
+  generate-from-codebase:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -28,7 +28,7 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
 
-            // Check how many open agent issues exist
+            // Check open issue count
             const { data: openIssues } = await github.rest.issues.listForRepo({
               owner, repo,
               state: 'open',
@@ -36,15 +36,13 @@ jobs:
               per_page: 100,
             });
 
-            const maxOpen = 20;
-            const available = maxOpen - openIssues.length;
-
+            const available = 20 - openIssues.length;
             if (available <= 0) {
-              core.info('At issue limit. Skipping generation.');
+              core.info('At issue limit.');
               return;
             }
 
-            // Get existing issue titles to avoid duplicates
+            // Get existing titles to avoid duplicates
             const { data: allIssues } = await github.rest.issues.listForRepo({
               owner, repo,
               state: 'all',
@@ -55,7 +53,7 @@ jobs:
 
             const newIssues = [];
 
-            // 1. Scan for @todo and TODO comments in core PHP files
+            // Scan for @todo and TODO in core files (not third-party)
             try {
               const todos = execSync(
                 'grep -rn "@todo\\|TODO\\|FIXME" src/wp-includes/ src/wp-admin/ --include="*.php" | grep -v vendor | grep -v node_modules | grep -v deprecated.php | grep -v ID3 | grep -v SimplePie | head -20',
@@ -78,14 +76,14 @@ jobs:
                 newIssues.push({
                   title,
                   body: [
-                    `Found a \`@todo\` comment in the codebase that needs attention.`,
+                    `Found a \`@todo\` comment that needs attention.`,
                     '',
                     `**File:** \`${file}\``,
                     `**Line:** ${lineNum}`,
                     `**Comment:** \`${cleanContent}\``,
                     '',
-                    `Investigate this TODO, implement a solution if appropriate, and include PHPUnit tests.`,
-                    `If the TODO is no longer relevant, remove it and explain why in the PR description.`,
+                    `Investigate, implement if appropriate, and include tests.`,
+                    `If no longer relevant, remove it and explain why.`,
                   ].join('\n'),
                 });
 
@@ -95,56 +93,7 @@ jobs:
               core.info(`TODO scan: ${e.message}`);
             }
 
-            // 2. Find PHP functions missing PHPDoc blocks
-            if (newIssues.length < 3) {
-              try {
-                const undocumented = execSync(
-                  'grep -rn "^function \\|^\tfunction \\|^\\tpublic function \\|^\\tprivate function \\|^\\tprotected function " src/wp-includes/ --include="*.php" | grep -v deprecated.php | grep -v ID3 | grep -v SimplePie | head -50',
-                  { encoding: 'utf8', timeout: 30000 }
-                ).trim().split('\n').filter(Boolean);
-
-                for (const line of undocumented) {
-                  const match = line.match(/^([^:]+):(\d+):(.+)$/);
-                  if (!match) continue;
-
-                  const [, file, lineNum, content] = match;
-                  const funcMatch = content.match(/function\s+(\w+)/);
-                  if (!funcMatch) continue;
-
-                  const funcName = funcMatch[1];
-                  const shortFile = file.replace('src/', '');
-
-                  // Check if the line before has a PHPDoc block ending
-                  try {
-                    const context = execSync(
-                      `sed -n '${Math.max(1, parseInt(lineNum) - 2)},${lineNum}p' ${file}`,
-                      { encoding: 'utf8', timeout: 5000 }
-                    );
-                    if (context.includes('*/')) continue; // Has PHPDoc
-                  } catch (e) { continue; }
-
-                  const title = `Add PHPDoc documentation for ${funcName}() in ${shortFile}`;
-                  if (existingTitles.includes(title.toLowerCase())) continue;
-
-                  newIssues.push({
-                    title,
-                    body: [
-                      `The function \`${funcName}()\` in \`${file}\` is missing PHPDoc documentation.`,
-                      '',
-                      `Add a complete PHPDoc block following [WordPress Inline Documentation Standards](https://make.wordpress.org/core/handbook/best-practices/inline-documentation-standards/php/).`,
-                      '',
-                      `Include: summary, description if needed, \`@param\` for all parameters, and \`@return\`.`,
-                    ].join('\n'),
-                  });
-
-                  if (newIssues.length >= 3) break;
-                }
-              } catch (e) {
-                core.info(`PHPDoc scan: ${e.message}`);
-              }
-            }
-
-            // Create the issues
+            // Create issues
             let created = 0;
             for (const issue of newIssues.slice(0, Math.min(3, available))) {
               try {
@@ -160,4 +109,93 @@ jobs:
               }
             }
 
-            core.info(`Created ${created} new issues.`);
+            core.info(`Created ${created} issues from codebase scan.`);
+
+  generate-planning-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create planning issue for agent architect
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // Check if a planning issue already exists
+            const { data: existing } = await github.rest.issues.listForRepo({
+              owner, repo,
+              state: 'open',
+              labels: 'type:planning',
+              per_page: 10,
+            });
+
+            if (existing.length > 0) {
+              core.info('Planning issue already open. Skipping.');
+              return;
+            }
+
+            // Get recently merged PRs for context
+            const { data: closedPRs } = await github.rest.pulls.list({
+              owner, repo,
+              state: 'closed',
+              base: 'autopilot',
+              sort: 'updated',
+              direction: 'desc',
+              per_page: 10,
+            });
+
+            const merged = closedPRs
+              .filter(pr => pr.merged_at)
+              .map(pr => `- #${pr.number}: ${pr.title}`)
+              .join('\n');
+
+            // Get open issues for context
+            const { data: openIssues } = await github.rest.issues.listForRepo({
+              owner, repo,
+              state: 'open',
+              labels: 'agent',
+              per_page: 20,
+            });
+
+            const openList = openIssues
+              .map(i => `- #${i.number}: ${i.title}`)
+              .join('\n');
+
+            await github.rest.issues.create({
+              owner, repo,
+              title: `Weekly planning: propose next improvements`,
+              body: [
+                `You are a WordPress core contributor planning the next batch of work.`,
+                '',
+                `## Context`,
+                '',
+                `Read \`GOVERNANCE.md\` for project principles and guardrails.`,
+                '',
+                `### Recently merged`,
+                merged || '_None yet._',
+                '',
+                `### Currently open`,
+                openList || '_None._',
+                '',
+                `## Task`,
+                '',
+                `1. Review the WordPress codebase in this repository`,
+                `2. Identify 3 well-scoped improvements that align with WordPress principles`,
+                `3. Create a separate GitHub issue for each, with:`,
+                `   - Clear description of the problem or improvement`,
+                `   - Which files are involved`,
+                `   - What tests should cover`,
+                `4. Label each new issue \`agent\` and \`status:ready\``,
+                `5. Close this planning issue when done`,
+                '',
+                `## What makes a good issue`,
+                '',
+                `- Improves WordPress without breaking backwards compatibility`,
+                `- Can be verified with tests`,
+                `- Follows the guardrails in GOVERNANCE.md`,
+                `- Considers: test coverage gaps, code quality, performance, accessibility, security hardening, documentation`,
+              ].join('\n'),
+              labels: ['agent', 'type:planning', 'status:ready'],
+            });
+
+            core.info('Created weekly planning issue.');
