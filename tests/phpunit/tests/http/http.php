@@ -713,4 +713,102 @@ class Tests_HTTP_HTTP extends WP_UnitTestCase {
 		$this->assertInstanceOf( 'WpOrg\Requests\Cookie\Jar', $cookie_jar );
 		$this->assertInstanceOf( 'WpOrg\Requests\Cookie', $cookie_jar['1'] );
 	}
+
+	/**
+	 * Tests that get_allowed_http_origins() includes both http and https variants
+	 * of the home and admin URLs without a port on standard installs.
+	 *
+	 * @covers ::get_allowed_http_origins
+	 */
+	public function test_get_allowed_http_origins_without_port() {
+		$origins = get_allowed_http_origins();
+
+		$home_host  = parse_url( home_url(), PHP_URL_HOST );
+		$admin_host = parse_url( admin_url(), PHP_URL_HOST );
+
+		$this->assertContains( 'http://' . $home_host, $origins );
+		$this->assertContains( 'https://' . $home_host, $origins );
+		$this->assertContains( 'http://' . $admin_host, $origins );
+		$this->assertContains( 'https://' . $admin_host, $origins );
+	}
+
+	/**
+	 * Tests that get_allowed_http_origins() preserves the port when home_url uses a non-standard port.
+	 *
+	 * @covers ::get_allowed_http_origins
+	 */
+	public function test_get_allowed_http_origins_preserves_port_in_home_url() {
+		$original_home = get_option( 'home' );
+		$home_parsed   = parse_url( $original_home );
+		$home_with_port = $home_parsed['scheme'] . '://' . $home_parsed['host'] . ':8080';
+
+		update_option( 'home', $home_with_port );
+
+		$origins = get_allowed_http_origins();
+
+		update_option( 'home', $original_home );
+
+		$this->assertContains( 'http://' . $home_parsed['host'] . ':8080', $origins );
+		$this->assertContains( 'https://' . $home_parsed['host'] . ':8080', $origins );
+	}
+
+	/**
+	 * Tests that get_allowed_http_origins() preserves the port when siteurl uses a non-standard port.
+	 *
+	 * @covers ::get_allowed_http_origins
+	 */
+	public function test_get_allowed_http_origins_preserves_port_in_siteurl() {
+		$original_siteurl = get_option( 'siteurl' );
+		$site_parsed      = parse_url( $original_siteurl );
+		$site_with_port   = $site_parsed['scheme'] . '://' . $site_parsed['host'] . ':9090';
+
+		update_option( 'siteurl', $site_with_port );
+
+		$origins = get_allowed_http_origins();
+
+		update_option( 'siteurl', $original_siteurl );
+
+		$this->assertContains( 'http://' . $site_parsed['host'] . ':9090', $origins );
+		$this->assertContains( 'https://' . $site_parsed['host'] . ':9090', $origins );
+	}
+
+	/**
+	 * Tests that is_allowed_http_origin() correctly allows an origin that includes the port
+	 * when the site is running on that port.
+	 *
+	 * @covers ::is_allowed_http_origin
+	 */
+	public function test_is_allowed_http_origin_with_port() {
+		$original_home = get_option( 'home' );
+		$home_parsed   = parse_url( $original_home );
+		$home_with_port = $home_parsed['scheme'] . '://' . $home_parsed['host'] . ':8080';
+
+		update_option( 'home', $home_with_port );
+
+		$result = is_allowed_http_origin( 'http://' . $home_parsed['host'] . ':8080' );
+
+		update_option( 'home', $original_home );
+
+		$this->assertSame( 'http://' . $home_parsed['host'] . ':8080', $result );
+	}
+
+	/**
+	 * Tests that is_allowed_http_origin() rejects an origin with a different port
+	 * than the one the site is configured to use.
+	 *
+	 * @covers ::is_allowed_http_origin
+	 */
+	public function test_is_allowed_http_origin_rejects_wrong_port() {
+		$original_home = get_option( 'home' );
+		$home_parsed   = parse_url( $original_home );
+		$home_with_port = $home_parsed['scheme'] . '://' . $home_parsed['host'] . ':8080';
+
+		update_option( 'home', $home_with_port );
+
+		$result = is_allowed_http_origin( 'http://' . $home_parsed['host'] . ':9999' );
+
+		update_option( 'home', $original_home );
+
+		$this->assertSame( '', $result );
+	}
 }
