@@ -20,7 +20,6 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
 
-            // Find draft PRs from agent branches
             const { data: prs } = await github.rest.pulls.list({
               owner, repo,
               state: 'open',
@@ -28,12 +27,15 @@ jobs:
               per_page: 20,
             });
 
+            // Match both copilot/ and agent/ branch prefixes
             const drafts = prs.filter(pr =>
-              pr.draft && pr.head.ref.startsWith('copilot/')
+              pr.draft && (
+                pr.head.ref.startsWith('copilot/') ||
+                pr.head.ref.startsWith('agent/')
+              )
             );
 
             for (const pr of drafts) {
-              // Check if the agent has stopped pushing (last commit > 10 min ago)
               const { data: commits } = await github.rest.pulls.listCommits({
                 owner, repo,
                 pull_number: pr.number,
@@ -46,11 +48,10 @@ jobs:
               const minutesSinceLastCommit = (Date.now() - lastCommit.getTime()) / (1000 * 60);
 
               if (minutesSinceLastCommit < 10) {
-                core.info(`PR #${pr.number}: still active (${minutesSinceLastCommit.toFixed(0)}m since last commit). Skipping.`);
+                core.info(`PR #${pr.number}: still active (${minutesSinceLastCommit.toFixed(0)}m). Skipping.`);
                 continue;
               }
 
-              // Convert draft to ready
               try {
                 await github.graphql(`
                   mutation($id: ID!) {

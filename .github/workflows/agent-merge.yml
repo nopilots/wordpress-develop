@@ -14,7 +14,9 @@ jobs:
   enable-auto-merge:
     runs-on: ubuntu-latest
     if: >
-      (github.event_name == 'pull_request_review' && github.event.review.state == 'approved') ||
+      (github.event_name == 'pull_request_review' &&
+       github.event.review.state == 'approved' &&
+       github.event.pull_request.base.ref == 'autopilot') ||
       github.event_name == 'check_suite'
     steps:
       - name: Enable auto-merge on approved PRs
@@ -24,7 +26,6 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
 
-            // Get PRs targeting autopilot
             const { data: prs } = await github.rest.pulls.list({
               owner, repo,
               state: 'open',
@@ -33,10 +34,8 @@ jobs:
             });
 
             for (const pr of prs) {
-              // Skip halted PRs
               if (pr.labels.some(l => l.name === 'safety:halt')) continue;
 
-              // Check for at least 1 approval from someone other than author
               const { data: reviews } = await github.rest.pulls.listReviews({
                 owner, repo,
                 pull_number: pr.number,
@@ -48,7 +47,6 @@ jobs:
 
               if (!hasApproval) continue;
 
-              // Enable auto-merge via GraphQL
               try {
                 await github.graphql(`
                   mutation($prId: ID!) {
@@ -63,7 +61,6 @@ jobs:
 
                 core.info(`Enabled auto-merge on PR #${pr.number}`);
               } catch (e) {
-                // Auto-merge may already be enabled or not available
                 core.info(`PR #${pr.number}: ${e.message}`);
               }
             }

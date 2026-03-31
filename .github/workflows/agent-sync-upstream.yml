@@ -18,11 +18,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Merge trunk into autopilot
+      - name: Checkout autopilot
         uses: actions/checkout@v4
         with:
           ref: autopilot
           fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Fast-forward autopilot from trunk
         id: merge
