@@ -76,12 +76,19 @@ jobs:
             });
             if (killSwitch.length > 0) return;
 
-            // Check if we already reviewed this PR
+            // Check what reviews already exist
             const { data: existingComments } = await github.rest.issues.listComments({
               owner, repo, issue_number: prNumber, per_page: 100,
             });
-            if (existingComments.some(c => c.body?.includes('**Doc** (Code Quality)'))) {
-              core.info('Already reviewed this PR.');
+            const { data: existingReviews } = await github.rest.pulls.listReviews({
+              owner, repo, pull_number: prNumber,
+            });
+            const docDone = existingComments.some(c => c.body?.includes('**Doc** (Code Quality)'));
+            const daltonDone = existingComments.some(c => c.body?.includes('**Dalton** (Security)'));
+            const patDone = existingReviews.some(r => r.user?.login === 'nopilots-pat[bot]');
+
+            if (docDone && daltonDone && patDone) {
+              core.info('All personas already reviewed this PR.');
               return;
             }
 
@@ -184,28 +191,42 @@ jobs:
             }
 
             // 1. Doc reviews code quality
-            const docPrompt = fs.readFileSync('.github/agent-personas/doc.md', 'utf8');
-            const docReview = await askModel(docPrompt, `Review this pull request for code quality.\n\n${prContext}`);
-
-            if (docReview) {
-              await postAsApp(process.env.DOC_TOKEN, docReview);
-              core.info('Doc reviewed.');
+            let docReview = null;
+            if (!docDone) {
+              const docPrompt = fs.readFileSync('.github/agent-personas/doc.md', 'utf8');
+              docReview = await askModel(docPrompt, `Review this pull request for code quality.\n\n${prContext}`);
+              if (docReview) {
+                await postAsApp(process.env.DOC_TOKEN, docReview);
+                core.info('Doc reviewed.');
+              } else {
+                core.warning('Doc review failed — Models API unavailable.');
+              }
             } else {
-              core.warning('Doc review failed — Models API unavailable.');
+              docReview = existingComments.find(c => c.body?.includes('**Doc**'))?.body || null;
+              core.info('Doc already reviewed.');
             }
 
             // 2. Dalton reviews security
-            const daltonPrompt = fs.readFileSync('.github/agent-personas/dalton.md', 'utf8');
-            const daltonReview = await askModel(daltonPrompt, `Review this pull request for security concerns.\n\n${prContext}`);
-
-            if (daltonReview) {
-              await postAsApp(process.env.DALTON_TOKEN, daltonReview);
-              core.info('Dalton reviewed.');
+            let daltonReview = null;
+            if (!daltonDone) {
+              const daltonPrompt = fs.readFileSync('.github/agent-personas/dalton.md', 'utf8');
+              daltonReview = await askModel(daltonPrompt, `Review this pull request for security concerns.\n\n${prContext}`);
+              if (daltonReview) {
+                await postAsApp(process.env.DALTON_TOKEN, daltonReview);
+                core.info('Dalton reviewed.');
+              } else {
+                core.warning('Dalton review failed — Models API unavailable.');
+              }
             } else {
-              core.warning('Dalton review failed — Models API unavailable.');
+              daltonReview = existingComments.find(c => c.body?.includes('**Dalton**'))?.body || null;
+              core.info('Dalton already reviewed.');
             }
 
-            // 3. Pat reads summaries and makes the decision (no diff — stays within token limit)
+            // 3. Pat reads summaries and makes the decision
+            if (patDone) {
+              core.info('Pat already reviewed.');
+              return;
+            }
             const patPrompt = fs.readFileSync('.github/agent-personas/pat.md', 'utf8')
               + '\n\nEnd your response with exactly one of these lines:\nDECISION: APPROVE\nDECISION: REQUEST_CHANGES';
 
