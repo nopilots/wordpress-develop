@@ -3,32 +3,75 @@ name: Agent Review
 on:
   pull_request_target:
     types: [opened, ready_for_review]
-  pull_request_review:
-    types: [submitted]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review'
+        required: true
 
 permissions:
-  issues: write
-  pull-requests: read
   contents: read
+  models: read
 
 jobs:
-  request-review:
+  review:
     runs-on: ubuntu-latest
-    concurrency:
-      group: agent-review-create-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
     if: >
-      github.event_name == 'pull_request_target' &&
-      (github.event.pull_request.draft == false || github.event.action == 'ready_for_review') &&
-      github.event.pull_request.base.ref == 'autopilot'
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event_name == 'pull_request_target' &&
+       github.event.pull_request.draft == false &&
+       github.event.pull_request.base.ref == 'autopilot')
     steps:
-      - name: Create review issue
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate app tokens
+        id: tokens
         uses: actions/github-script@v7
         with:
           script: |
+            // We'll generate tokens in the review step directly
+
+      - name: Doc token
+        id: doc-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.DOC_APP_ID }}
+          private-key: ${{ secrets.DOC_PRIVATE_KEY }}
+
+      - name: Dalton token
+        id: dalton-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.DALTON_APP_ID }}
+          private-key: ${{ secrets.DALTON_PRIVATE_KEY }}
+
+      - name: Pat token
+        id: pat-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.PAT_APP_ID }}
+          private-key: ${{ secrets.PAT_PRIVATE_KEY }}
+
+      - name: Run persona reviews
+        uses: actions/github-script@v7
+        env:
+          DOC_TOKEN: ${{ steps.doc-token.outputs.token }}
+          DALTON_TOKEN: ${{ steps.dalton-token.outputs.token }}
+          PAT_TOKEN: ${{ steps.pat-token.outputs.token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          script: |
+            const fs = require('fs');
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const pr = context.payload.pull_request;
+            const prNumber = context.payload.pull_request?.number
+              || parseInt(context.payload.inputs?.pr_number);
+
+            if (!prNumber) {
+              core.info('No PR number.');
+              return;
+            }
 
             // Kill switch
             const { data: killSwitch } = await github.rest.issues.listForRepo({
@@ -36,77 +79,127 @@ jobs:
             });
             if (killSwitch.length > 0) return;
 
-            // Prevent loops
-            if (pr.labels?.some(l => l.name === 'type:review-task')) {
-              core.info('PR is from a review task. Skipping.');
+            // Check if we already reviewed this PR
+            const { data: existingComments } = await github.rest.issues.listComments({
+              owner, repo, issue_number: prNumber, per_page: 100,
+            });
+            if (existingComments.some(c => c.body?.includes('**Doc** (Code Quality)'))) {
+              core.info('Already reviewed this PR.');
               return;
             }
 
-            // Check if review issue already exists (open or closed)
-            const { data: existing } = await github.rest.issues.listForRepo({
-              owner, repo,
-              state: 'all',
-              labels: 'type:review-task',
-              per_page: 100,
+            // Get PR diff
+            const { data: diff } = await github.rest.pulls.get({
+              owner, repo, pull_number: prNumber,
+              mediaType: { format: 'diff' },
             });
 
-            if (existing.some(i => i.title.includes(`PR #${pr.number}`))) {
-              core.info(`Review issue already exists for PR #${pr.number}.`);
-              return;
-            }
-
-            await github.rest.issues.create({
-              owner, repo,
-              title: `Review PR #${pr.number}: ${pr.title}`,
-              body: [
-                `Review this pull request and leave your feedback directly on the PR.`,
-                '',
-                `**PR:** #${pr.number}`,
-                `**Author:** ${pr.user.login}`,
-                `**Branch:** \`${pr.head.ref}\` → \`${pr.base.ref}\``,
-                '',
-                `## Instructions`,
-                '',
-                `1. Read \`GOVERNANCE.md\` and \`.github/copilot-instructions.md\``,
-                `2. Review the PR diff at #${pr.number}`,
-                `3. Check for WordPress coding standards, test coverage, backwards compatibility, and security`,
-                `4. Leave an approving or change-requesting review on the PR with substantive feedback`,
-                '',
-                `**Important:** This review must be done by a different agent than the PR author (\`${pr.user.login}\`).`,
-              ].join('\n'),
-              labels: ['agent', 'type:review-task', 'status:ready'],
+            // Get PR details
+            const { data: pr } = await github.rest.pulls.get({
+              owner, repo, pull_number: prNumber,
             });
 
-  close-review-issue:
-    runs-on: ubuntu-latest
-    concurrency:
-      group: agent-review-close-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
-    if: github.event_name == 'pull_request_review'
-    steps:
-      - name: Close completed review issues
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const prNumber = context.payload.pull_request.number;
+            // Truncate diff if too large
+            const maxDiff = 8000;
+            const truncatedDiff = diff.length > maxDiff
+              ? diff.substring(0, maxDiff) + '\n... (diff truncated)'
+              : diff;
 
-            const { data: issues } = await github.rest.issues.listForRepo({
-              owner, repo,
-              state: 'open',
-              labels: 'type:review-task',
-              per_page: 100,
-            });
+            const prContext = `# PR #${prNumber}: ${pr.title}\n\n${pr.body || 'No description.'}\n\n## Diff\n\`\`\`diff\n${truncatedDiff}\n\`\`\``;
 
-            for (const issue of issues) {
-              if (issue.title.includes(`PR #${prNumber}`)) {
-                await github.rest.issues.update({
-                  owner, repo,
-                  issue_number: issue.number,
-                  state: 'closed',
-                  state_reason: 'completed',
-                });
-                core.info(`Closed review issue #${issue.number} for PR #${prNumber}`);
+            // Helper: call GitHub Models API
+            async function askModel(systemPrompt, userPrompt) {
+              const res = await fetch('https://models.github.ai/inference/chat/completions', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${process.env.GITHUB_TOKEN}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  model: 'openai/gpt-4.1',
+                  messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userPrompt },
+                  ],
+                  max_tokens: 1500,
+                  temperature: 0.5,
+                }),
+              });
+
+              if (!res.ok) {
+                const err = await res.text();
+                core.warning(`Models API error: ${err}`);
+                return null;
               }
+
+              const result = await res.json();
+              return result.choices?.[0]?.message?.content || null;
+            }
+
+            // Helper: post comment as an app
+            async function postAsApp(token, body) {
+              await fetch(`https://api.github.com/repos/${owner}/${repo}/issues/${prNumber}/comments`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Accept': 'application/vnd.github.v3+json',
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ body }),
+              });
+            }
+
+            // Helper: submit formal review as an app
+            async function reviewAsApp(token, body, event) {
+              await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/reviews`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Accept': 'application/vnd.github.v3+json',
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ body, event }),
+              });
+            }
+
+            // 1. Doc reviews code quality
+            const docPrompt = fs.readFileSync('.github/agent-personas/doc.md', 'utf8');
+            const docReview = await askModel(docPrompt, `Review this pull request for code quality.\n\n${prContext}`);
+
+            if (docReview) {
+              await postAsApp(process.env.DOC_TOKEN, docReview);
+              core.info('Doc reviewed.');
+            }
+
+            // 2. Dalton reviews security
+            const daltonPrompt = fs.readFileSync('.github/agent-personas/dalton.md', 'utf8');
+            const daltonReview = await askModel(daltonPrompt, `Review this pull request for security concerns.\n\n${prContext}`);
+
+            if (daltonReview) {
+              await postAsApp(process.env.DALTON_TOKEN, daltonReview);
+              core.info('Dalton reviewed.');
+            }
+
+            // 3. Pat reads all reviews and makes the decision
+            const patPrompt = fs.readFileSync('.github/agent-personas/pat.md', 'utf8');
+            const patContext = [
+              prContext,
+              '',
+              '## Previous Reviews',
+              '',
+              docReview ? `### Doc (Code Quality)\n${docReview}` : 'Doc: no review.',
+              '',
+              daltonReview ? `### Dalton (Security)\n${daltonReview}` : 'Dalton: no review.',
+            ].join('\n');
+
+            const patReview = await askModel(patPrompt, `Read the previous reviews and the PR diff. Make your final decision — approve or request changes.\n\n${patContext}`);
+
+            if (patReview) {
+              // Determine if Pat approves or requests changes
+              const lower = patReview.toLowerCase();
+              const approves = lower.includes('approve') && !lower.includes('request changes') && !lower.includes('requesting changes');
+              const event = approves ? 'APPROVE' : 'REQUEST_CHANGES';
+
+              await reviewAsApp(process.env.PAT_TOKEN, patReview, event);
+              core.info(`Pat ${event === 'APPROVE' ? 'approved' : 'requested changes'}.`);
             }
