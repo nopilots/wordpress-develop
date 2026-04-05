@@ -205,25 +205,26 @@ jobs:
               core.warning('Dalton review failed — Models API unavailable.');
             }
 
-            // 3. Pat reads all reviews and makes the decision
+            // 3. Pat reads summaries and makes the decision (no diff — stays within token limit)
             const patPrompt = fs.readFileSync('.github/agent-personas/pat.md', 'utf8')
               + '\n\nEnd your response with exactly one of these lines:\nDECISION: APPROVE\nDECISION: REQUEST_CHANGES';
 
+            const docSummary = docReview ? docReview.substring(0, 800) : '_Review unavailable._';
+            const daltonSummary = daltonReview ? daltonReview.substring(0, 800) : '_Review unavailable._';
+
             const patContext = [
-              prContext,
+              `# PR #${prNumber}: ${pr.title}`,
               '',
-              '## Previous Reviews',
+              pr.body || 'No description.',
               '',
-              docReview
-                ? `### Doc (Code Quality)\n${docReview}`
-                : '### Doc (Code Quality)\n_Review unavailable — Models API error._',
+              '## Doc (Code Quality)',
+              docSummary,
               '',
-              daltonReview
-                ? `### Dalton (Security)\n${daltonReview}`
-                : '### Dalton (Security)\n_Review unavailable — Models API error._',
+              '## Dalton (Security)',
+              daltonSummary,
             ].join('\n');
 
-            const patReview = await askModel(patPrompt, `Read the previous reviews and the PR diff. Make your final decision.\n\n${patContext}`);
+            const patReview = await askModel(patPrompt, `Read the reviews from Doc and Dalton. Make your final decision on this PR.\n\n${patContext}`);
 
             if (patReview) {
               const event = patReview.includes('DECISION: APPROVE') ? 'APPROVE' : 'REQUEST_CHANGES';
