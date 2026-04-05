@@ -101,8 +101,8 @@ jobs:
               return;
             }
 
-            // Truncate diff if too large
-            const maxDiff = 15000;
+            // Truncate diff to fit free tier token limits (~8K tokens = ~4K chars for diff after prompt overhead)
+            const maxDiff = 4000;
             const truncatedDiff = diff.length > maxDiff
               ? diff.substring(0, maxDiff) + '\n... (diff truncated)'
               : diff;
@@ -127,12 +127,12 @@ jobs:
                   'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                  model: 'openai/gpt-4.1',
+                  model: 'openai/gpt-4o-mini',
                   messages: [
                     { role: 'system', content: systemPrompt },
                     { role: 'user', content: userPrompt },
                   ],
-                  max_tokens: 1500,
+                  max_tokens: 800,
                   temperature: 0.5,
                 }),
               });
