@@ -95,29 +95,21 @@ jobs:
               // 3. Check required author accounts exist
               const requiredAuthors = ['autopilot', 'pat', 'doc', 'dalton'];
               try {
-                const usersRes = await fetch(`${wpUrl}/graphql`, {
-                  method: 'POST',
-                  headers: {
-                    'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({
-                    query: `{ users(first: 50, where: { hasPublishedPosts: null }) { nodes { slug id } } }`,
-                  }),
-                });
-                if (usersRes.ok) {
-                  const usersData = await usersRes.json();
-                  if (usersData.errors) {
-                    failures.push(`Author check error: ${usersData.errors[0].message}`);
-                  } else {
-                    const userSlugs = usersData.data?.users?.nodes?.map(u => u.slug) || [];
-                    for (const author of requiredAuthors) {
-                      if (userSlugs.includes(author)) {
-                        core.info(`Author "${author}": OK`);
-                      } else {
-                        failures.push(`Author "${author}" not found in WordPress.`);
-                      }
+                for (const author of requiredAuthors) {
+                  const authorRes = await fetch(`${wpUrl}/wp-json/wp/v2/users?slug=${author}`, {
+                    headers: {
+                      'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
+                    },
+                  });
+                  if (authorRes.ok) {
+                    const users = await authorRes.json();
+                    if (users.length > 0) {
+                      core.info(`Author "${author}": OK`);
+                    } else {
+                      failures.push(`Author "${author}" not found in WordPress.`);
                     }
+                  } else {
+                    failures.push(`Author check for "${author}" failed: HTTP ${authorRes.status}`);
                   }
                 }
               } catch (e) {

@@ -76,20 +76,25 @@ runs:
             return json.data;
           };
 
-          // Find author
+          // Find author via REST API (WPGraphQL hides users with no posts)
           let authorId = null;
           const authorSlug = process.env.AUTHOR_SLUG;
           if (authorSlug) {
             try {
-              const usersResult = await wpGraphQL(
-                `{ users(first: 50, where: { hasPublishedPosts: null }) { nodes { slug id } } }`
-              );
-              const match = usersResult.users?.nodes?.find(u => u.slug === authorSlug);
-              authorId = match?.id || null;
-              if (authorId) {
-                core.info(`Author: ${authorSlug}`);
-              } else {
-                core.warning(`Author "${authorSlug}" not found — publishing as default user.`);
+              const authorRes = await fetch(`${wpUrl}/wp-json/wp/v2/users?slug=${authorSlug}`, {
+                headers: {
+                  'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
+                },
+              });
+              if (authorRes.ok) {
+                const users = await authorRes.json();
+                if (users.length > 0) {
+                  // Convert REST API numeric ID to WPGraphQL base64 ID
+                  authorId = Buffer.from(`user:${users[0].id}`).toString('base64');
+                  core.info(`Author: ${authorSlug}`);
+                } else {
+                  core.warning(`Author "${authorSlug}" not found — publishing as default user.`);
+                }
               }
             } catch (e) {
               core.warning(`Author lookup failed: ${e.message}`);
