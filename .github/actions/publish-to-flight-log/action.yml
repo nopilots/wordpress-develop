@@ -124,22 +124,34 @@ runs:
           const categoryId = catResult.categories?.nodes?.[0]?.id || null;
           if (!categoryId) core.warning(`Category "${slug}" not found — publishing without category.`);
 
-          // Publish
-          const data = await wpGraphQL(
-            `mutation CreatePost($title: String!, $content: String!, $excerpt: String, $status: PostStatusEnum!, $categories: PostCategoriesInput, $authorId: ID) {
-              createPost(input: { title: $title, content: $content, excerpt: $excerpt, status: $status, categories: $categories, authorId: $authorId }) {
-                post { id uri link }
-              }
-            }`,
-            {
-              title: process.env.POST_TITLE,
-              content: process.env.POST_CONTENT,
-              excerpt: process.env.POST_EXCERPT,
-              status: 'PUBLISH',
-              ...(categoryId && { categories: { append: true, nodes: [{ id: categoryId }] } }),
-              ...(authorId && { authorId }),
+          // Publish (with author fallback)
+          const postVars = {
+            title: process.env.POST_TITLE,
+            content: process.env.POST_CONTENT,
+            excerpt: process.env.POST_EXCERPT,
+            status: 'PUBLISH',
+            ...(categoryId && { categories: { append: true, nodes: [{ id: categoryId }] } }),
+            ...(authorId && { authorId }),
+          };
+
+          const mutation = `mutation CreatePost($title: String!, $content: String!, $excerpt: String, $status: PostStatusEnum!, $categories: PostCategoriesInput, $authorId: ID) {
+            createPost(input: { title: $title, content: $content, excerpt: $excerpt, status: $status, categories: $categories, authorId: $authorId }) {
+              post { id uri link }
             }
-          );
+          }`;
+
+          let data;
+          try {
+            data = await wpGraphQL(mutation, postVars);
+          } catch (e) {
+            if (authorId && e.message.includes('not allowed')) {
+              core.warning(`Cannot publish as "${process.env.AUTHOR_SLUG}" — retrying as default user.`);
+              delete postVars.authorId;
+              data = await wpGraphQL(mutation, postVars);
+            } else {
+              throw e;
+            }
+          }
 
           const postId = data.createPost.post.id;
           const postLink = data.createPost.post.link;
@@ -199,3 +211,35 @@ runs:
           } catch (qErr) {
             core.warning(`Post refinement failed: ${qErr.message}`);
           }
+
+    - name: Report publish failure
+      if: failure()
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const { data: existing } = await github.rest.issues.listForRepo({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            state: 'open',
+            per_page: 50,
+          });
+          const title = '[Flight Log] Publish failure';
+          if (existing.some(i => i.title === title)) return;
+
+          await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title,
+            body: [
+              'The Flight Log composite action failed to publish a post.',
+              '',
+              `**Workflow:** ${context.workflow}`,
+              `**Run:** ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              `**Title:** ${process.env.POST_TITLE || 'unknown'}`,
+              `**Category:** ${process.env.CATEGORY_SLUG || 'unknown'}`,
+              `**Author:** ${process.env.AUTHOR_SLUG || 'unknown'}`,
+              '',
+              'Investigate the run logs and fix the root cause.',
+            ].join('\n'),
+            labels: ['agent', 'status:triage'],
+          });
