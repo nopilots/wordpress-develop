@@ -1,0 +1,110 @@
+name: Agent Revise
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  issues: write
+  pull-requests: read
+  contents: read
+
+concurrency:
+  group: agent-revise-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  create-revision-issue:
+    runs-on: ubuntu-latest
+    if: >
+      github.event.review.state == 'changes_requested' &&
+      github.event.pull_request.base.ref == 'autopilot'
+    steps:
+      - name: Create revision issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pr = context.payload.pull_request;
+            const review = context.payload.review;
+
+            // Kill switch
+            const { data: killSwitch } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'system:off', per_page: 1,
+            });
+            if (killSwitch.length > 0) return;
+
+            // Count existing revisions for this PR
+            const { data: comments } = await github.rest.issues.listComments({
+              owner, repo, issue_number: pr.number, per_page: 100,
+            });
+
+            const revisionCount = comments.filter(c =>
+              c.body?.includes('<!-- revision:')
+            ).length;
+
+            if (revisionCount >= 2) {
+              // Max revisions reached — close the PR
+              await github.rest.issues.createComment({
+                owner, repo,
+                issue_number: pr.number,
+                body: `This PR has been revised ${revisionCount} times and still has requested changes. Closing — the approach may need to be rethought.\n\n<!-- revision: closed -->`,
+              });
+
+              await github.rest.pulls.update({
+                owner, repo,
+                pull_number: pr.number,
+                state: 'closed',
+              });
+
+              core.info(`Closed PR #${pr.number} after ${revisionCount} failed revisions.`);
+              return;
+            }
+
+            // Check if revision issue already exists
+            const { data: existing } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', per_page: 50,
+            });
+
+            if (existing.some(i => i.title.includes(`Revise PR #${pr.number}`))) {
+              core.info('Revision issue already exists.');
+              return;
+            }
+
+            // Create revision issue
+            await github.rest.issues.create({
+              owner, repo,
+              title: `Revise PR #${pr.number}: ${pr.title}`,
+              body: [
+                `PR #${pr.number} received a change request. Read the feedback and push fixes to the same branch.`,
+                '',
+                `**PR:** #${pr.number}`,
+                `**Branch:** \`${pr.head.ref}\``,
+                `**Reviewer:** ${review.user.login}`,
+                '',
+                `## Feedback`,
+                '',
+                review.body || '_No detailed feedback provided._',
+                '',
+                `## Instructions`,
+                '',
+                `1. Read the review feedback above`,
+                `2. Check out branch \`${pr.head.ref}\``,
+                `3. Make the requested changes`,
+                `4. Push to the same branch — the PR will update automatically`,
+                `5. The review workflow will re-run`,
+                '',
+                `<!-- revision: ${revisionCount + 1} -->`,
+              ].join('\n'),
+              labels: ['agent', 'status:ready'],
+            });
+
+            // Mark on the PR that a revision was requested
+            await github.rest.issues.createComment({
+              owner, repo,
+              issue_number: pr.number,
+              body: `Revision ${revisionCount + 1}/2 requested. Creating issue for agent to address feedback.\n\n<!-- revision: ${revisionCount + 1} -->`,
+            });
+
+            core.info(`Created revision issue for PR #${pr.number} (revision ${revisionCount + 1}/2).`);

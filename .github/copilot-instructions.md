@@ -6,6 +6,7 @@ Read `GOVERNANCE.md` and `CONTRIBUTING.md` before taking any action.
 
 - Create feature branches as `agent/<issue-number>-<short-description>`
 - PRs target `autopilot`
+- Include `Closes #N` in the PR body where N is the issue number
 - Never commit directly to `trunk` or `autopilot`
 
 ## Tests

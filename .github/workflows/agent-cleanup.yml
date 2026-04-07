@@ -1,0 +1,79 @@
+name: Agent Cleanup
+
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  issues: write
+  pull-requests: read
+
+jobs:
+  close-linked-issues:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'autopilot'
+    steps:
+      - name: Find and close linked issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pr = context.payload.pull_request;
+            const body = pr.body || '';
+            const branch = pr.head.ref || '';
+            const title = pr.title || '';
+
+            const issueNumbers = new Set();
+
+            // 1. Scan PR body for Closes/Fixes #N
+            const closePatterns = body.match(/(?:closes|fixes|resolves)\s+#(\d+)/gi) || [];
+            for (const match of closePatterns) {
+              const num = match.match(/#(\d+)/);
+              if (num) issueNumbers.add(parseInt(num[1]));
+            }
+
+            // 2. Scan PR body for any #N references
+            if (issueNumbers.size === 0) {
+              const refs = body.match(/#(\d+)/g) || [];
+              for (const ref of refs) {
+                const num = parseInt(ref.replace('#', ''));
+                if (num > 0 && num < 10000) issueNumbers.add(num);
+              }
+            }
+
+            // 3. Extract from branch name (copilot/fix-issue-5 or agent/5-description)
+            if (issueNumbers.size === 0) {
+              const branchMatch = branch.match(/(?:copilot|agent)\/(\d+)/) ||
+                                  branch.match(/issue-(\d+)/);
+              if (branchMatch) issueNumbers.add(parseInt(branchMatch[1]));
+            }
+
+            if (issueNumbers.size === 0) {
+              core.info('No linked issues found.');
+              return;
+            }
+
+            // Close matched issues
+            for (const num of issueNumbers) {
+              try {
+                const { data: issue } = await github.rest.issues.get({
+                  owner, repo, issue_number: num,
+                });
+
+                // Only close open agent issues
+                if (issue.state !== 'open') continue;
+                if (!issue.labels.some(l => l.name === 'agent')) continue;
+
+                await github.rest.issues.update({
+                  owner, repo,
+                  issue_number: num,
+                  state: 'closed',
+                  state_reason: 'completed',
+                });
+
+                core.info(`Closed issue #${num} — linked to merged PR #${pr.number}.`);
+              } catch (e) {
+                core.info(`Issue #${num} not found or already closed.`);
+              }
+            }

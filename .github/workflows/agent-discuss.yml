@@ -86,15 +86,8 @@ jobs:
 
             const comments = discussion.comments.nodes;
 
-            // Skip if last comment was from us (prevent self-triggering)
-            if (comments.length > 0) {
-              const lastComment = comments[comments.length - 1];
-              if (lastComment.author.login === 'github-actions[bot]' ||
-                  lastComment.author.login === 'github-actions') {
-                // Check if we should continue or if it's Captain's turn
-                // Don't respond to our own comments back-to-back without a gap
-              }
-            }
+            // Known persona bots — skip if last comment was from one of ours
+            const personaBots = ['github-actions[bot]', 'github-actions', 'nopilots-doc[bot]', 'nopilots-dalton[bot]', 'nopilots-pat[bot]'];
 
             // Persona order
             const personas = ['doc', 'dalton'];

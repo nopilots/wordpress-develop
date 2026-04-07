@@ -3,6 +3,8 @@ name: Agent Coordinator
 on:
   issues:
     types: [labeled]
+  schedule:
+    - cron: '0 6 * * *'
   workflow_dispatch:
 
 permissions:
