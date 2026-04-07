@@ -154,15 +154,15 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@v1
         with:
-          app-id: ${{ secrets.PAT_APP_ID }}
-          private-key: ${{ secrets.PAT_PRIVATE_KEY }}
+          app-id: ${{ secrets.DOC_APP_ID }}
+          private-key: ${{ secrets.DOC_PRIVATE_KEY }}
 
       - name: Create PR with updated diagram
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
-          git config user.name 'nopilots-pat[bot]'
-          git config user.email 'nopilots-pat[bot]@users.noreply.github.com'
+          git config user.name 'nopilots-doc[bot]'
+          git config user.email 'nopilots-doc[bot]@users.noreply.github.com'
           git add ARCHITECTURE.md
           if git diff --staged --quiet; then
             echo "No changes to diagram."
