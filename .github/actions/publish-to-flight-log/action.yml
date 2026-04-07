@@ -85,11 +85,26 @@ runs:
           const authorSlug = process.env.AUTHOR_SLUG;
           if (authorSlug) {
             try {
+              // Try WPGraphQL first (works for users with published posts)
               const usersResult = await wpGraphQL(
                 `{ users(first: 100) { nodes { slug id } } }`
               );
               const match = usersResult.users?.nodes?.find(u => u.slug === authorSlug);
               authorId = match?.id || null;
+
+              // Fallback to REST API for users with no posts yet
+              if (!authorId) {
+                const restRes = await fetch(`${wpUrl}/wp-json/wp/v2/users?slug=${authorSlug}&per_page=1`, {
+                  headers: { 'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}` },
+                });
+                if (restRes.ok) {
+                  const users = await restRes.json();
+                  if (Array.isArray(users) && users.length > 0) {
+                    authorId = Buffer.from(`user:${users[0].id}`).toString('base64');
+                  }
+                }
+              }
+
               if (authorId) {
                 core.info(`Author: ${authorSlug}`);
               } else {
