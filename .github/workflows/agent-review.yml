@@ -139,7 +139,7 @@ jobs:
                     { role: 'system', content: systemPrompt },
                     { role: 'user', content: userPrompt },
                   ],
-                  max_tokens: 800,
+                  max_tokens: 400,
                   temperature: 0.5,
                 }),
               });
