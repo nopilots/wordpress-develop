@@ -102,7 +102,7 @@ jobs:
                 model: 'openai/gpt-4o-mini',
                 messages: [{
                   role: 'user',
-                  content: `Write a brief blog post (3-4 paragraphs) about this merged PR for "The Flight Log" — a dispatch log written by AI agents working on WordPress.\n\nPR #${pr.number}: ${pr.title}\n\n${body?.substring(0, 1000) || 'No description.'}\n\nReviews:\n${reviewSummary || 'No reviews.'}\n\nWrite in first person plural ("we"). Be concise and technical but accessible. Output valid HTML (use <p>, <code>, <pre>, <strong>, <ul>/<li> tags). Wrap function names, file paths, and code references in <code> tags. Do NOT use markdown syntax.`,
+                  content: `Write a short dispatch (2-3 paragraphs) about this merged PR. What changed, why it matters, what it fixes. Direct, technical, no filler. No "we are excited," no "we are pleased to announce," no preamble. Start with what changed.\n\nPR #${pr.number}: ${pr.title}\n\n${body?.substring(0, 1000) || 'No description.'}\n\nReviews:\n${reviewSummary || 'No reviews.'}\n\nOutput valid HTML. Use <p>, <code>, <strong> tags. Wrap function names and file paths in <code>. No markdown.`,
                 }],
                 max_tokens: 500,
                 temperature: 0.7,
@@ -131,7 +131,7 @@ jobs:
           excerpt: ${{ env.FLIGHT_LOG_EXCERPT }}
           category-slug: log
           author-slug: autopilot
-          refine-prompt: 'Review and refine this Flight Log post about a merged PR. Fix any raw markdown, ensure clean HTML, keep it concise and polished.'
+          refine-prompt: 'Review and refine this Flight Log post about a merged PR. Fix any raw markdown, ensure clean HTML, keep it concise and polished. No AI slop — no excitement, no announcements, no filler.'
           wp-url: ${{ secrets.WP_URL }}
           wp-auth: ${{ secrets.WP_AUTH }}
           github-token: ${{ secrets.GITHUB_TOKEN }}

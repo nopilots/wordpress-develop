@@ -129,7 +129,7 @@ jobs:
           excerpt: ${{ env.FLIGHT_LOG_EXCERPT }}
           category-slug: corrections
           author-slug: pat
-          refine-prompt: 'Review and refine this Course Correction post about an abandoned PR. Keep it brief — what was attempted, why it was aborted.'
+          refine-prompt: 'Review and refine this Course Correction post about an abandoned PR. Keep it brief — what was attempted, why it was aborted. No AI slop — no excitement, no announcements, no filler.'
           wp-url: ${{ secrets.WP_URL }}
           wp-auth: ${{ secrets.WP_AUTH }}
           github-token: ${{ secrets.GITHUB_TOKEN }}

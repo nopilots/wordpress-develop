@@ -257,7 +257,7 @@ jobs:
           excerpt: ${{ env.FLIGHT_LOG_EXCERPT }}
           category-slug: briefings
           author-slug: pat
-          refine-prompt: 'Review and refine this Crew Briefing post about a governance decision. Keep it concise — the decision and key context only.'
+          refine-prompt: 'Review and refine this Crew Briefing post about a governance decision. Keep it concise — the decision and key context only. No AI slop — no excitement, no announcements, no filler.'
           wp-url: ${{ secrets.WP_URL }}
           wp-auth: ${{ secrets.WP_AUTH }}
           github-token: ${{ secrets.GITHUB_TOKEN }}

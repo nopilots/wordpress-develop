@@ -329,7 +329,7 @@ jobs:
           excerpt: ${{ env.FLIGHT_LOG_EXCERPT }}
           category-slug: preflight
           author-slug: pat
-          refine-prompt: 'Review and refine this Preflight Review. It should show: a link to the PR, a brief summary, and the verdict. Strip verbose review text.'
+          refine-prompt: 'Review and refine this Preflight Review. It should show: a link to the PR, a brief summary, and the verdict. Strip verbose review text. No AI slop — no excitement, no announcements, no filler.'
           wp-url: ${{ secrets.WP_URL }}
           wp-auth: ${{ secrets.WP_AUTH }}
           github-token: ${{ secrets.GITHUB_TOKEN }}

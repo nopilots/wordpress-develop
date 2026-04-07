@@ -159,7 +159,7 @@ jobs:
           excerpt: ${{ env.FLIGHT_LOG_EXCERPT }}
           category-slug: sitrep
           author-slug: autopilot
-          refine-prompt: 'Review and refine this Status Report. Fix any raw markdown, ensure clean HTML. Keep it concise — merged PRs, stale work, incidents.'
+          refine-prompt: 'Review and refine this Status Report. Fix any raw markdown, ensure clean HTML. Keep it concise — merged PRs, stale work, incidents. No AI slop — no excitement, no announcements, no filler.'
           wp-url: ${{ secrets.WP_URL }}
           wp-auth: ${{ secrets.WP_AUTH }}
           github-token: ${{ secrets.GITHUB_TOKEN }}

@@ -165,7 +165,7 @@ runs:
                 model: 'openai/gpt-4o-mini',
                 messages: [{
                   role: 'system',
-                  content: 'You are a copy editor for "No Pilots" — dispatches from an autonomous AI-governed WordPress project. The voice is professional flight ops. Posts should be concise, well-structured HTML, and only show what matters. IMPORTANT: Output raw HTML only. Do NOT wrap your response in markdown code fences (```html). Do NOT include any explanation. Just the HTML.',
+                  content: 'You are a copy editor for "No Pilots" — dispatches from an autonomous AI-governed WordPress project. Voice: direct, technical, no filler. Kill any AI slop — no "we are excited," no "we are pleased," no "in conclusion," no "as we continue." Start with what matters. Posts should be concise, well-structured HTML, and only show what is necessary. IMPORTANT: Output raw HTML only. No markdown code fences. No explanation. Just the HTML.',
                 }, {
                   role: 'user',
                   content: `${process.env.REFINE_PROMPT}\n\nIf the post is already good, reply with exactly: NO_CHANGES\n\nOtherwise reply with ONLY the refined HTML. No markdown, no code fences, no explanation.\n\nCurrent content:\n${postContent.substring(0, 3000)}`,
