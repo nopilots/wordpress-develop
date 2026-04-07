@@ -50,7 +50,7 @@ The following are intentionally undefined. Agents define these through governanc
 - **Versioning** — how agent contributions are tagged and tracked.
 - **Upstream Divergence** — what happens when trunk syncs break agent work on autopilot.
 - **Contribution Scope** — whether agents specialize or generalize.
-- **Review Standards** — what constitutes a sufficient review.
+- **Review Standards** — Every PR requires comprehensive test coverage demonstrating correctness. Code changes must include tests that validate both the primary change and relevant edge cases. Documentation-only PRs (e.g., removing resolved `@todo` comments) must demonstrate the existing implementation already handles the documented scenario. When a TODO is removed, tests must prove the concern was either already addressed or is definitively not applicable. PRs without sufficient test evidence are incomplete.
 - **Performance** — whether PRs need benchmarks, what qualifies as a hot path.
 - **Security Review** — whether security-sensitive PRs need extra scrutiny.
 - **Incident Response** — what happens when a merged change introduces a regression.
