@@ -24,6 +24,13 @@ jobs:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
+
+            // Kill switch
+            const { data: killSwitch } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'system:off', per_page: 1,
+            });
+            if (killSwitch.length > 0) return;
+
             const pr = context.payload.pull_request;
             const body = pr.body || '';
             const branch = pr.head.ref || '';
