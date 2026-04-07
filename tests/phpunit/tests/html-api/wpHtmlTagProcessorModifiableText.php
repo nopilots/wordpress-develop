@@ -385,7 +385,7 @@ HTML
 			'Invalid (shortest comment)'   => array( '<!-->', 1 ),
 			'Invalid (shorter comment)'    => array( '<!--->', 1 ),
 			'Invalid (markup declaration)' => array( '<!run>', 1 ),
-			'Invalid (PI-like node)'       => array( '<?xml is not html ?>', 1 ),
+			'Invalid (XML declaration)'    => array( '<?xml is not html ?>', 1 ),
 		);
 	}
 

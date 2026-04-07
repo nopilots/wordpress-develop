@@ -2050,8 +2050,12 @@ class WP_HTML_Tag_Processor {
 				 *                     [#x10000-#xEFFFF]
 				 * > NameChar      ::= NameStartChar | "-" | "." | [0-9] | #xB7 | [#x0300-#x036F] | [#x203F-#x2040]
 				 *
-				 * @todo Processing instruction nodes in SGML may contain any kind of markup. XML defines a
-				 *       special case with `<?xml ... ?>` syntax, but the `?` is part of the bogus comment.
+				 * The XML spec explicitly reserves the target name "xml" (in any letter-case
+				 * combination) for the XML declaration, which is not a processing instruction:
+				 *
+				 * > PITarget ::= Name - (('X' | 'x') ('M' | 'm') ('L' | 'l'))
+				 *
+				 * Therefore `<?xml ... ?>` must not be classified as a PI node lookalike.
 				 *
 				 * @see https://www.w3.org/TR/2006/REC-xml11-20060816/#NT-PITarget
 				 */
@@ -2061,6 +2065,14 @@ class WP_HTML_Tag_Processor {
 
 					if ( 0 < $pi_target_length ) {
 						$pi_target_length += strspn( $comment_text, 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:_-.', $pi_target_length );
+
+						/*
+						 * The target name "xml" (case-insensitive) is reserved for the XML
+						 * declaration and must not be treated as a PI node lookalike.
+						 */
+						if ( 3 === $pi_target_length && 0 === strcasecmp( substr( $comment_text, 0, 3 ), 'xml' ) ) {
+							return true;
+						}
 
 						$this->comment_type       = self::COMMENT_AS_PI_NODE_LOOKALIKE;
 						$this->tag_name_starts_at = $this->token_starts_at + 2;
