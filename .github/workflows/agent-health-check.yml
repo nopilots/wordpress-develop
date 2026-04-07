@@ -1,0 +1,209 @@
+name: Agent Health Check
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Flight Log and agent systems
+        uses: actions/github-script@v7
+        env:
+          WP_URL: ${{ secrets.WP_URL }}
+          WP_AUTH: ${{ secrets.WP_AUTH }}
+          COPILOT_PAT: ${{ secrets.COPILOT_PAT }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const failures = [];
+
+            // 1. Check WP_URL is reachable
+            const wpUrl = process.env.WP_URL;
+            const wpAuth = process.env.WP_AUTH;
+
+            if (!wpUrl || !wpAuth) {
+              failures.push('WP_URL or WP_AUTH secret is not set.');
+            } else {
+              try {
+                const pingRes = await fetch(`${wpUrl}/graphql`, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ query: '{ generalSettings { title } }' }),
+                });
+
+                if (!pingRes.ok) {
+                  failures.push(`WPGraphQL unreachable: HTTP ${pingRes.status}`);
+                } else {
+                  const pingData = await pingRes.json();
+                  if (pingData.errors) {
+                    failures.push(`WPGraphQL error: ${pingData.errors[0].message}`);
+                  } else {
+                    core.info(`WordPress connected: ${pingData.data.generalSettings.title}`);
+                  }
+                }
+              } catch (e) {
+                failures.push(`WordPress connection failed: ${e.message}`);
+              }
+
+              // 2. Check all required categories exist
+              const requiredCategories = [
+                'flight-log',
+                'preflight-review',
+                'status-report',
+                'course-correction',
+                'crew-briefing',
+                'changelog',
+              ];
+
+              try {
+                const catRes = await fetch(`${wpUrl}/graphql`, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    query: `{ categories(first: 50) { nodes { slug } } }`,
+                  }),
+                });
+
+                if (catRes.ok) {
+                  const catData = await catRes.json();
+                  const slugs = catData.data?.categories?.nodes?.map(n => n.slug) || [];
+                  for (const required of requiredCategories) {
+                    if (slugs.includes(required)) {
+                      core.info(`Category "${required}": OK`);
+                    } else {
+                      failures.push(`Category "${required}" missing from WordPress.`);
+                    }
+                  }
+                }
+              } catch (e) {
+                failures.push(`Category check failed: ${e.message}`);
+              }
+
+              // 3. Create and delete a draft post to verify write access
+              try {
+                const createRes = await fetch(`${wpUrl}/graphql`, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    query: `mutation { createPost(input: { title: "Health Check", content: "This post will be deleted.", status: DRAFT }) { post { id databaseId } } }`,
+                  }),
+                });
+
+                if (createRes.ok) {
+                  const createData = await createRes.json();
+                  if (createData.errors) {
+                    failures.push(`Draft post creation failed: ${createData.errors[0].message}`);
+                  } else {
+                    const draftId = createData.data.createPost.post.id;
+                    core.info('Draft post created: OK');
+
+                    // Delete it
+                    const deleteRes = await fetch(`${wpUrl}/graphql`, {
+                      method: 'POST',
+                      headers: {
+                        'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({
+                        query: `mutation($id: ID!) { deletePost(input: { id: $id, forceDelete: true }) { post { id } } }`,
+                        variables: { id: draftId },
+                      }),
+                    });
+
+                    if (deleteRes.ok) {
+                      const deleteData = await deleteRes.json();
+                      if (deleteData.errors) {
+                        failures.push(`Draft post cleanup failed: ${deleteData.errors[0].message}`);
+                      } else {
+                        core.info('Draft post deleted: OK');
+                      }
+                    }
+                  }
+                }
+              } catch (e) {
+                failures.push(`Write access check failed: ${e.message}`);
+              }
+            }
+
+            // 4. Check COPILOT_PAT is valid
+            if (!process.env.COPILOT_PAT) {
+              failures.push('COPILOT_PAT secret is not set.');
+            } else {
+              try {
+                const patRes = await fetch('https://api.github.com/graphql', {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${process.env.COPILOT_PAT}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ query: '{ viewer { login } }' }),
+                });
+                const patData = await patRes.json();
+                if (patData.errors || patData.message) {
+                  failures.push(`COPILOT_PAT invalid: ${patData.message || patData.errors[0].message}`);
+                } else {
+                  core.info(`COPILOT_PAT valid: ${patData.data.viewer.login}`);
+                }
+              } catch (e) {
+                failures.push(`COPILOT_PAT check failed: ${e.message}`);
+              }
+            }
+
+            // 5. Check coding agents are available
+            try {
+              const actorsRes = await github.graphql(`{
+                repository(owner: "${owner}", name: "${repo}") {
+                  suggestedActors(first: 100, capabilities: CAN_BE_ASSIGNED) {
+                    nodes { ... on Bot { login } }
+                  }
+                }
+              }`);
+              const bots = actorsRes.repository?.suggestedActors?.nodes?.filter(n => n.login) || [];
+              const botNames = bots.map(b => b.login);
+              core.info(`Available coding agents: ${botNames.join(', ') || 'none'}`);
+
+              if (!botNames.includes('anthropic-code-agent') && !botNames.includes('copilot-swe-agent')) {
+                failures.push('No coding agents available (need anthropic-code-agent or copilot-swe-agent).');
+              }
+            } catch (e) {
+              failures.push(`Coding agent check failed: ${e.message}`);
+            }
+
+            // Report results
+            if (failures.length === 0) {
+              core.info('All health checks passed.');
+              return;
+            }
+
+            core.setFailed(`${failures.length} health check(s) failed.`);
+
+            // Create or update health check issue
+            const { data: existing } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', per_page: 50,
+            });
+            const hasIssue = existing.some(i => i.title === '[Health Check] System issues detected');
+
+            if (!hasIssue) {
+              await github.rest.issues.create({
+                owner, repo,
+                title: '[Health Check] System issues detected',
+                body: `The daily health check found issues:\n\n${failures.map(f => '- ' + f).join('\n')}\n\nThis issue will auto-close when all checks pass.`,
+                labels: ['safety:halt'],
+              });
+            }
