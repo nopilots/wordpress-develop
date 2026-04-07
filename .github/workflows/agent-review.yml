@@ -368,5 +368,10 @@ jobs:
                 }
               }
             } else {
-              core.warning('Pat review failed — Models API unavailable. PR will not be approved.');
+              await github.rest.issues.addLabels({
+                owner, repo,
+                issue_number: prNumber,
+                labels: ['safety:halt'],
+              });
+              core.setFailed('Pat review failed — Models API unavailable. PR halted.');
             }

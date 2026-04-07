@@ -47,33 +47,33 @@ jobs:
               labels: 'agent',
               per_page: 100,
             });
+            // Auto-close stale in-progress issues >7 days old
+            const stale = issues
+              .filter(i =>
+                i.labels.some(l => l.name === 'status:in-progress') &&
+                (Date.now() - new Date(i.created_at)) > 7 * 24 * 60 * 60 * 1000
+              )
+              .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+              .slice(0, 3);
+
+            for (const issue of stale) {
+              await github.rest.issues.createComment({
+                owner, repo,
+                issue_number: issue.number,
+                body: 'Auto-closing: issue has been in progress for >7 days without resolution.',
+              });
+              await github.rest.issues.update({
+                owner, repo,
+                issue_number: issue.number,
+                state: 'closed',
+                state_reason: 'not_planned',
+              });
+              core.info(`Auto-closed stale issue #${issue.number}`);
+            }
+
             if (issues.length > 20) {
               halt = true;
               reasons.push(`Open agent issues: ${issues.length} (limit: 20)`);
-
-              // Deadlock prevention: auto-close stale in-progress issues >7 days old
-              const stale = issues
-                .filter(i =>
-                  i.labels.some(l => l.name === 'status:in-progress') &&
-                  (Date.now() - new Date(i.created_at)) > 7 * 24 * 60 * 60 * 1000
-                )
-                .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-                .slice(0, 3);
-
-              for (const issue of stale) {
-                await github.rest.issues.createComment({
-                  owner, repo,
-                  issue_number: issue.number,
-                  body: 'Auto-closing: issue open >7 days while at capacity limit. Reopen if still needed.',
-                });
-                await github.rest.issues.update({
-                  owner, repo,
-                  issue_number: issue.number,
-                  state: 'closed',
-                  state_reason: 'not_planned',
-                });
-                core.info(`Auto-closed stale issue #${issue.number}`);
-              }
             }
 
             // 2. Check open agent PR count
@@ -85,6 +85,7 @@ jobs:
             const agentPRs = prs.filter(p =>
               p.head.ref.startsWith('agent/') ||
               p.head.ref.startsWith('copilot/') ||
+              p.head.ref.startsWith('claude/') ||
               p.labels.some(l => l.name === 'agent')
             );
             if (agentPRs.length > 10) {
