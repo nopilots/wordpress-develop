@@ -42,9 +42,16 @@ jobs:
               per_page: 5,
             });
 
-            // Auto-close stale reflection issues >7 days old
+            // Auto-close and unpin stale reflection issues
             for (const issue of existing) {
               if (Date.now() - new Date(issue.updated_at) > 24 * 60 * 60 * 1000) {
+                // Unpin before closing
+                try {
+                  await github.graphql(`
+                    mutation($id: ID!) { unpinIssue(input: { issueId: $id }) { issue { id } } }
+                  `, { id: issue.node_id });
+                } catch (e) { /* may not be pinned */ }
+
                 await github.rest.issues.update({
                   owner, repo, issue_number: issue.number,
                   state: 'closed', state_reason: 'not_planned',
@@ -98,7 +105,7 @@ jobs:
             });
             const haltList = halted.map(i => `- #${i.number}: ${i.title}`);
 
-            await github.rest.issues.create({
+            const { data: newIssue } = await github.rest.issues.create({
               owner, repo,
               title: `Weekly reflection: review progress and propose governance changes`,
               body: [
@@ -127,6 +134,16 @@ jobs:
               ].join('\n'),
               labels: ['agent', 'type:reflection', 'status:ready'],
             });
+
+            // Pin the new reflection issue
+            try {
+              await github.graphql(`
+                mutation($id: ID!) { pinIssue(input: { issueId: $id }) { issue { id } } }
+              `, { id: newIssue.node_id });
+              core.info(`Pinned reflection issue #${newIssue.number}.`);
+            } catch (e) {
+              core.warning(`Could not pin issue: ${e.message}`);
+            }
 
             core.info('Created weekly reflection issue.');
 

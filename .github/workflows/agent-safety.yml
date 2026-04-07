@@ -134,6 +134,11 @@ jobs:
               });
               for (const issue of haltIssues) {
                 if (issue.title.startsWith('[SAFETY]')) {
+                  try {
+                    await github.graphql(`
+                      mutation($id: ID!) { unpinIssue(input: { issueId: $id }) { issue { id } } }
+                    `, { id: issue.node_id });
+                  } catch (e) { /* may not be pinned */ }
                   await github.rest.issues.update({
                     owner, repo,
                     issue_number: issue.number,
@@ -169,7 +174,7 @@ jobs:
               }
 
               if (!alreadyHasHaltIssue) {
-                await github.rest.issues.create({
+                const { data: haltIssue } = await github.rest.issues.create({
                   owner, repo,
                   title: '[SAFETY] Circuit breaker activated',
                   body: [
@@ -181,6 +186,13 @@ jobs:
                   ].join('\n'),
                   labels: ['safety:halt', 'agent'],
                 });
+
+                // Pin safety issues for visibility
+                try {
+                  await github.graphql(`
+                    mutation($id: ID!) { pinIssue(input: { issueId: $id }) { issue { id } } }
+                  `, { id: haltIssue.node_id });
+                } catch (e) { /* max 3 pinned issues */ }
               }
 
               core.setFailed(`Safety halt: ${reasons.join('; ')}`);
