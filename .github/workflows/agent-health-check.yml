@@ -102,7 +102,7 @@ jobs:
                     'Content-Type': 'application/json',
                   },
                   body: JSON.stringify({
-                    query: `{ users(first: 50) { nodes { slug id } } }`,
+                    query: `{ users(first: 50, where: { hasPublishedPosts: null }) { nodes { slug id } } }`,
                   }),
                 });
                 if (usersRes.ok) {
