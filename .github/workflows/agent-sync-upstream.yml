@@ -66,6 +66,89 @@ jobs:
             echo "result=conflict" >> $GITHUB_OUTPUT
           fi
 
+      - name: Analyze upstream changes for agent impact
+        if: steps.merge.outputs.result == 'success'
+        uses: actions/github-script@v7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          script: |
+            const { execSync } = require('child_process');
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // Get files changed in the merge
+            let changedFiles;
+            try {
+              changedFiles = execSync('git diff --name-only HEAD~1 HEAD', { encoding: 'utf8' })
+                .trim().split('\n').filter(Boolean);
+            } catch (e) {
+              core.info('No diff available.');
+              return;
+            }
+
+            if (changedFiles.length === 0) {
+              core.info('No upstream changes.');
+              return;
+            }
+
+            // Get files that agents have previously modified (from merged PRs)
+            const { data: mergedPRs } = await github.rest.pulls.list({
+              owner, repo, state: 'closed', base: 'autopilot', per_page: 20,
+            });
+            const agentFiles = new Set();
+            for (const pr of mergedPRs.filter(p => p.merged_at)) {
+              try {
+                const { data: files } = await github.rest.pulls.listFiles({
+                  owner, repo, pull_number: pr.number, per_page: 50,
+                });
+                files.forEach(f => agentFiles.add(f.filename));
+              } catch (e) { /* skip */ }
+            }
+
+            // Find overlap — upstream changed files that agents have also touched
+            const overlap = changedFiles.filter(f => agentFiles.has(f));
+
+            if (overlap.length === 0) {
+              core.info(`Upstream changed ${changedFiles.length} files, no overlap with agent work.`);
+              return;
+            }
+
+            core.info(`Found ${overlap.length} upstream changes overlapping agent work.`);
+
+            // Check for existing issue
+            const { data: existing } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'agent', per_page: 50,
+            });
+
+            const title = `Evaluate upstream changes in ${overlap.length} file${overlap.length !== 1 ? 's' : ''}`;
+            if (existing.some(i => i.title.toLowerCase().startsWith('evaluate upstream'))) {
+              core.info('Upstream evaluation issue already open.');
+              return;
+            }
+
+            await github.rest.issues.create({
+              owner, repo,
+              title,
+              body: [
+                `The latest upstream sync changed files that agents have previously modified.`,
+                '',
+                `**Overlapping files:**`,
+                ...overlap.slice(0, 10).map(f => `- \`${f}\``),
+                overlap.length > 10 ? `- ...and ${overlap.length - 10} more` : '',
+                '',
+                `## Task`,
+                '',
+                `1. Review the upstream changes in these files`,
+                `2. Check if any agent work on autopilot conflicts with the upstream changes`,
+                `3. If conflicts exist, propose a resolution`,
+                `4. If no conflicts, close this issue`,
+              ].filter(Boolean).join('\n'),
+              labels: ['agent', 'status:ready'],
+            });
+
+            core.info('Created upstream evaluation issue.');
+
       - name: Detect version bump
         id: version-check
         if: steps.merge.outputs.result == 'success'
