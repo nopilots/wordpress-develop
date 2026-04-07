@@ -23,8 +23,17 @@ jobs:
       github.event_name == 'schedule' ||
       (github.event.label.name == 'status:ready')
     steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.PAT_APP_ID }}
+          private-key: ${{ secrets.PAT_PRIVATE_KEY }}
+
       - name: Assign ready issues to agents
         uses: actions/github-script@v7
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
         with:
           script: |
             const owner = context.repo.owner;
@@ -106,6 +115,20 @@ jobs:
 
             core.info(`Selected agent: ${agent.login} (${agent.id})`);
 
+            // App token GraphQL client for mutations (bot identity, no human)
+            const appToken = process.env.APP_TOKEN;
+            const appGraphql = async (query, variables) => {
+              const res = await fetch('https://api.github.com/graphql', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${appToken}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ query, variables }),
+              });
+              return res.json();
+            };
+
             // Assign up to 3 issues
             for (const issue of unassigned.slice(0, 3)) {
               try {
@@ -132,7 +155,7 @@ jobs:
 
                 const actorIds = JSON.stringify([agent.id, ...currentAssignees]);
 
-                await github.graphql(`
+                const assignResult = await appGraphql(`
                   mutation($input: ReplaceActorsForAssignableInput!) {
                     replaceActorsForAssignable(input: $input) { __typename }
                   }
@@ -142,6 +165,11 @@ jobs:
                     actorIds: [agent.id, ...currentAssignees],
                   }
                 });
+
+                if (assignResult?.errors) {
+                  core.warning(`Failed to assign #${issue.number}: ${assignResult.errors[0].message}`);
+                  continue;
+                }
 
                 await github.rest.issues.addLabels({
                   owner, repo,
