@@ -1,4 +1,4 @@
-name: Agent Merge
+name: Auto-Merge
 
 on:
   pull_request_review:

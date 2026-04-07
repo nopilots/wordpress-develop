@@ -1,4 +1,4 @@
-name: Agent Cleanup
+name: Post-Merge
 
 on:
   pull_request_target:

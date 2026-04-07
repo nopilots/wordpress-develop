@@ -1,4 +1,4 @@
-name: Agent Coordinator
+name: Coordinator
 
 on:
   issues:

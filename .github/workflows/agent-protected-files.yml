@@ -1,4 +1,4 @@
-name: Agent Protected Files
+name: File Guard
 
 on:
   pull_request_target:

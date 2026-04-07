@@ -1,4 +1,4 @@
-name: Agent Issue Generator
+name: Issue Generator
 
 on:
   schedule:

@@ -1,4 +1,4 @@
-name: Agent Health Check
+name: Health Check
 
 on:
   schedule:

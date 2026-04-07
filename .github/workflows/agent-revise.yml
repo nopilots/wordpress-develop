@@ -1,4 +1,4 @@
-name: Agent Revise
+name: Revise
 
 on:
   pull_request_review:

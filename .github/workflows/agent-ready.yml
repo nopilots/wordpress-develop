@@ -1,4 +1,4 @@
-name: Agent Ready
+name: Draft Converter
 
 on:
   check_suite:

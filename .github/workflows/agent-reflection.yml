@@ -1,4 +1,4 @@
-name: Agent Reflection
+name: SITREP
 
 on:
   schedule:

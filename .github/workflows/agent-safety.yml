@@ -1,4 +1,4 @@
-name: Agent Safety
+name: Safety
 
 on:
   pull_request_target:

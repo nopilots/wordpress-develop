@@ -1,4 +1,4 @@
-name: Agent Guard
+name: Branch Guard
 
 on:
   pull_request_target:

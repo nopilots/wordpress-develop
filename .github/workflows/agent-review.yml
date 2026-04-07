@@ -1,4 +1,4 @@
-name: Agent Review
+name: Preflight Review
 
 on:
   pull_request_target:
