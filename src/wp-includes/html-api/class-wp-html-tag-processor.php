@@ -1962,11 +1962,9 @@ class WP_HTML_Tag_Processor {
 				 * is therefore not possible to parse a CDATA section containing
 				 * a `>` in the HTML syntax.
 				 *
-				 * Inside foreign elements there is a discrepancy between browsers
-				 * and the specification on this.
-				 *
-				 * @todo Track whether the Tag Processor is inside a foreign element
-				 *       and require the proper closing `]]>` in those cases.
+				 * Note that CDATA sections in foreign content (SVG and MathML) are
+				 * handled earlier in this function and never reach this code path.
+				 * @see self::STATE_CDATA_NODE
 				 */
 				if (
 					$this->token_length >= 10 &&
