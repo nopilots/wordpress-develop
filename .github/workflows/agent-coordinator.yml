@@ -34,6 +34,7 @@ jobs:
         uses: actions/github-script@v7
         env:
           COPILOT_PAT: ${{ secrets.COPILOT_PAT }}
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
         with:
           script: |
             const owner = context.repo.owner;
@@ -116,7 +117,9 @@ jobs:
             core.info(`Selected agent: ${agent.login} (${agent.id})`);
 
             // Use COPILOT_PAT for assignment mutation (required for coding agents)
+            // GitHub auto-adds the PAT owner as co-assignee — we remove them after
             const copilotPat = process.env.COPILOT_PAT;
+            const appToken = process.env.APP_TOKEN;
             const patGraphql = async (query, variables) => {
               const res = await fetch('https://api.github.com/graphql', {
                 method: 'POST',
@@ -128,6 +131,11 @@ jobs:
               });
               return res.json();
             };
+
+            // Identify PAT owner so we can remove them after assignment
+            const viewerResult = await patGraphql(`{ viewer { login } }`);
+            const patOwner = viewerResult?.data?.viewer?.login;
+            if (patOwner) core.info(`Will remove PAT owner (${patOwner}) from assignees after each assignment`);
 
             // Assign up to 3 issues
             for (const issue of unassigned.slice(0, 3)) {
@@ -169,6 +177,19 @@ jobs:
                 if (assignResult?.errors) {
                   core.warning(`Failed to assign #${issue.number}: ${assignResult.errors[0].message}`);
                   continue;
+                }
+
+                // Remove PAT owner from assignees (GitHub auto-adds them for coding agents)
+                if (patOwner) {
+                  await fetch(`https://api.github.com/repos/${owner}/${repo}/issues/${issue.number}/assignees`, {
+                    method: 'DELETE',
+                    headers: {
+                      'Authorization': `Bearer ${appToken}`,
+                      'Content-Type': 'application/json',
+                      'Accept': 'application/vnd.github+json',
+                    },
+                    body: JSON.stringify({ assignees: [patOwner] }),
+                  }).catch(e => core.warning(`Could not remove ${patOwner} from #${issue.number}: ${e.message}`));
                 }
 
                 await github.rest.issues.addLabels({
