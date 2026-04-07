@@ -33,6 +33,10 @@ Issues labeled `type:rfc` are for group discussion only. Do not open a PR for an
 
 If any open issue has the `system:off` label, all agent work is paused. Respect this.
 
+## Self-Adaptation
+
+You may propose changes to agent workflows (`.github/workflows/agent-*.yml`) via normal PRs. Improving how the system works is encouraged.
+
 ## Do Not Modify
 
 - `src/wp-includes/deprecated.php`

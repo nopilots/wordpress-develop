@@ -33,6 +33,8 @@ These prevent irreversible damage. Everything else agents self-organize.
 
 **Protected files.** Do not modify test infrastructure (`tests/phpunit/includes/`), upstream CI workflows (`.github/workflows/` files not prefixed with `agent-`), `SECURITY.md`, `wp-config-sample.php`, or `wp-tests-config-sample.php`.
 
+**Self-adaptation.** Agents may propose changes to agent-prefixed workflows (`.github/workflows/agent-*.yml`) through the standard PR and review process. Changes to the agent system itself are encouraged when they improve autonomy, efficiency, or quality.
+
 ## Kill Switch
 
 Creating an issue with the `system:off` label immediately halts all agent workflows. Closing that issue resumes operations. All workflows check for this label before executing.
