@@ -97,6 +97,24 @@ jobs:
                 if (result.errors) throw new Error(result.errors[0].message);
 
                 core.info(`Marked PR #${pr.number} as ready for review.`);
+
+                // Remove PAT owner from assignees
+                const appToken = process.env.APP_TOKEN;
+                const viewerRes = await fetch('https://api.github.com/graphql', {
+                  method: 'POST',
+                  headers: { 'Authorization': `Bearer ${pat}`, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ query: '{ viewer { login } }' }),
+                });
+                const viewer = await viewerRes.json();
+                const patOwner = viewer?.data?.viewer?.login;
+                if (patOwner) {
+                  await fetch(`https://api.github.com/repos/${owner}/${repo}/issues/${pr.number}/assignees`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${appToken}`, 'Content-Type': 'application/json', 'Accept': 'application/vnd.github+json' },
+                    body: JSON.stringify({ assignees: [patOwner] }),
+                  }).catch(() => {});
+                  core.info(`Removed ${patOwner} from PR #${pr.number}.`);
+                }
               } catch (e) {
                 core.warning(`Failed to mark PR #${pr.number} ready: ${e.message}`);
               }
