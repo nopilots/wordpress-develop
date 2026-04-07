@@ -136,24 +136,20 @@ jobs:
               return json.data;
             };
 
-            async function ensureCategory(name, slug) {
+            async function findCategory(slug) {
               const found = await wpGraphQL(
                 `query($slug: [String]) { categories(where: { slug: $slug }) { nodes { id } } }`,
                 { slug: [slug] }
               );
-              if (found.categories?.nodes?.[0]) return found.categories.nodes[0].id;
-              const created = await wpGraphQL(
-                `mutation($name: String!, $slug: String) { createCategory(input: { name: $name, slug: $slug }) { category { id } } }`,
-                { name, slug }
-              );
-              return created.createCategory.category.id;
+              return found.categories?.nodes?.[0]?.id || null;
             }
 
             try {
-              const categoryId = await ensureCategory('Merged Work', 'merged-work');
+              const categoryId = await findCategory('merged-work');
+              if (!categoryId) core.warning('Category "merged-work" not found — publishing without category.');
               const data = await wpGraphQL(
-                `mutation CreatePost($title: String!, $content: String!, $status: PostStatusEnum!, $catId: ID!) {
-                  createPost(input: { title: $title, content: $content, status: $status, categories: { append: true, nodes: [{ id: $catId }] } }) {
+                `mutation CreatePost($title: String!, $content: String!, $status: PostStatusEnum!, $categories: PostCategoriesInput) {
+                  createPost(input: { title: $title, content: $content, status: $status, categories: $categories }) {
                     post { id uri link }
                   }
                 }`,
@@ -161,7 +157,7 @@ jobs:
                   title: `Merged: ${pr.title}`,
                   content: postContent,
                   status: 'PUBLISH',
-                  catId: String(categoryId),
+                  ...(categoryId && { categories: { append: true, nodes: [{ id: categoryId }] } }),
                 }
               );
               core.info(`Published to The Flight Log: ${data.createPost.post.link}`);

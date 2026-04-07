@@ -273,7 +273,8 @@ jobs:
                   }
 
                   try {
-                    const categoryId = await ensureCategory('Governance Decisions', 'governance-decisions');
+                    const categoryId = await findCategory('governance-decisions');
+                    if (!categoryId) core.warning('Category "governance-decisions" not found — publishing without category.');
                     const decisionContent = [
                       `<h2>Decision</h2>`,
                       `<p>${reply}</p>`,
@@ -282,8 +283,8 @@ jobs:
                     ].join('\n');
 
                     const wpData = await wpGraphQL(
-                      `mutation CreatePost($title: String!, $content: String!, $status: PostStatusEnum!, $catId: ID!) {
-                        createPost(input: { title: $title, content: $content, status: $status, categories: { append: true, nodes: [{ id: $catId }] } }) {
+                      `mutation CreatePost($title: String!, $content: String!, $status: PostStatusEnum!, $categories: PostCategoriesInput) {
+                        createPost(input: { title: $title, content: $content, status: $status, categories: $categories }) {
                           post { id uri link }
                         }
                       }`,
@@ -291,7 +292,7 @@ jobs:
                         title: `Decision: ${discussion.title}`,
                         content: decisionContent,
                         status: 'PUBLISH',
-                        catId: String(categoryId),
+                        ...(categoryId && { categories: { append: true, nodes: [{ id: categoryId }] } }),
                       }
                     );
                     core.info(`Published decision to The Flight Log: ${wpData.createPost.post.link}`);
