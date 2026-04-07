@@ -192,7 +192,7 @@ jobs:
                   }
                 }`,
                 {
-                  title: `Status Report: Week of ${new Date().toISOString().split('T')[0]}`,
+                  title: `Week of ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`,
                   content,
                   status: 'PUBLISH',
                   ...(categoryId && { categories: { append: true, nodes: [{ id: categoryId }] } }),
