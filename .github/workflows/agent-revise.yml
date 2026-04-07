@@ -67,7 +67,7 @@ jobs:
               const wpUrl = process.env.WP_URL;
               const wpAuth = process.env.WP_AUTH;
               if (wpUrl && wpAuth) {
-                const wpRes = await fetch(`${wpUrl}/wp-json/wp/v2/posts/`, {
+                const wpRes = await fetch(`${wpUrl}/wp-json/wp/v2/posts`, {
                   method: 'POST',
                   headers: {
                     'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
