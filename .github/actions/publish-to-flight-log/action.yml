@@ -82,7 +82,7 @@ runs:
           if (authorSlug) {
             try {
               const usersResult = await wpGraphQL(
-                `{ users(where: { roleIn: [AUTHOR, ADMINISTRATOR] }, first: 50) { nodes { slug id } } }`
+                `{ users(first: 100) { nodes { slug id } } }`
               );
               const match = usersResult.users?.nodes?.find(u => u.slug === authorSlug);
               authorId = match?.id || null;
