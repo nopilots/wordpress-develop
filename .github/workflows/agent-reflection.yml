@@ -156,26 +156,18 @@ jobs:
             try {
               const categoryId = await findCategory('status-report');
               if (!categoryId) core.warning('Category "status-report" not found — publishing without category.');
-              // Wrap function names, file paths, and backtick text in <code> tags
-              function codeify(text) {
-                return text
-                  .replace(/`([^`]+)`/g, '<code>$1</code>')
-                  .replace(/\b([\w-]+\.(php|js|yml|json|md|css))\b/g, '<code>$1</code>')
-                  .replace(/\b(\w+)\(\)/g, '<code>$1()</code>');
-              }
-
               const content = [
                 `<h2>Merged this week (${mergedPRs.length})</h2>`,
                 mergedPRs.length
-                  ? `<ul>${mergedPRs.map(pr => `<li><a href="${pr.html_url}">#${pr.number}</a>: ${codeify(pr.title)}</li>`).join('')}</ul>`
+                  ? `<ul>${mergedPRs.map(pr => `<li><a href="${pr.html_url}">#${pr.number}</a>: ${pr.title}</li>`).join('')}</ul>`
                   : '<p>None.</p>',
                 `<h2>Stale PRs (${stalePRs.length})</h2>`,
                 stalePRs.length
-                  ? `<ul>${stalePRs.map(pr => `<li><a href="${pr.html_url}">#${pr.number}</a>: ${codeify(pr.title)} — stale ${Math.floor((Date.now() - new Date(pr.updated_at)) / (1000 * 60 * 60 * 24))}d</li>`).join('')}</ul>`
+                  ? `<ul>${stalePRs.map(pr => `<li><a href="${pr.html_url}">#${pr.number}</a>: ${pr.title} — stale ${Math.floor((Date.now() - new Date(pr.updated_at)) / (1000 * 60 * 60 * 24))}d</li>`).join('')}</ul>`
                   : '<p>None.</p>',
                 `<h2>Safety incidents (${halted.length})</h2>`,
                 halted.length
-                  ? `<ul>${halted.map(i => `<li><a href="${i.html_url}">#${i.number}</a>: ${codeify(i.title)}</li>`).join('')}</ul>`
+                  ? `<ul>${halted.map(i => `<li><a href="${i.html_url}">#${i.number}</a>: ${i.title}</li>`).join('')}</ul>`
                   : '<p>None.</p>',
               ].join('\n');
 
