@@ -130,9 +130,11 @@ jobs:
             try {
               const categoryId = await findCategory('release-notes');
               if (!categoryId) core.warning('Category "release-notes" not found — publishing without category.');
+              const repoUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}`;
               const content = [
                 `<p>WordPress has been updated from <code>${previous}</code> to <code>${current}</code> via upstream sync.</p>`,
                 `<p>The autopilot branch has been automatically updated with the latest changes from trunk.</p>`,
+                `<p><a href="${repoUrl}/compare/${previous}...${current}">View changes on GitHub</a></p>`,
               ].join('\n');
 
               const data = await wpGraphQL(

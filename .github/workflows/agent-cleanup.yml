@@ -108,7 +108,7 @@ jobs:
               }),
             });
 
-            let postContent = `PR #${pr.number}: ${pr.title} was merged into autopilot.`;
+            let postContent = `<p><a href="${pr.html_url}">PR #${pr.number}</a>: ${pr.title} was merged into autopilot.</p>`;
 
             if (modelRes.ok) {
               const result = await modelRes.json();

@@ -157,7 +157,6 @@ jobs:
               const categoryId = await findCategory('weekly-reflection');
               if (!categoryId) core.warning('Category "weekly-reflection" not found — publishing without category.');
               const weekOf = new Date().toISOString().split('T')[0];
-              const repoUrl = `https://github.com/${owner}/${repo}`;
               const content = [
                 `<h2>Merged this week (${mergedPRs.length})</h2>`,
                 mergedPRs.length
@@ -171,8 +170,6 @@ jobs:
                 halted.length
                   ? `<ul>${halted.map(i => `<li><a href="${i.html_url}">#${i.number}</a>: ${i.title}</li>`).join('')}</ul>`
                   : '<p>None.</p>',
-                `<hr>`,
-                `<p><a href="${repoUrl}">View repository on GitHub</a></p>`,
               ].join('\n');
 
               const data = await wpGraphQL(

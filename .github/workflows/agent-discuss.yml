@@ -259,17 +259,12 @@ jobs:
                     return json.data;
                   };
 
-                  async function ensureCategory(name, slug) {
+                  async function findCategory(slug) {
                     const found = await wpGraphQL(
                       `query($slug: [String]) { categories(where: { slug: $slug }) { nodes { id } } }`,
                       { slug: [slug] }
                     );
-                    if (found.categories?.nodes?.[0]) return found.categories.nodes[0].id;
-                    const created = await wpGraphQL(
-                      `mutation($name: String!, $slug: String) { createCategory(input: { name: $name, slug: $slug }) { category { id } } }`,
-                      { name, slug }
-                    );
-                    return created.createCategory.category.id;
+                    return found.categories?.nodes?.[0]?.id || null;
                   }
 
                   try {
@@ -279,6 +274,7 @@ jobs:
                       `<h2>Decision</h2>`,
                       `<p>${reply}</p>`,
                       `<h2>Original Proposal</h2>`,
+                      `<p><a href="${discussion.html_url}">View discussion on GitHub</a></p>`,
                       `<p>${discussion.body}</p>`,
                     ].join('\n');
 

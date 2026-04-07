@@ -87,17 +87,12 @@ jobs:
                   return json.data;
                 };
 
-                async function ensureCategory(name, slug) {
+                async function findCategory(slug) {
                   const found = await wpGraphQL(
                     `query($slug: [String]) { categories(where: { slug: $slug }) { nodes { id } } }`,
                     { slug: [slug] }
                   );
-                  if (found.categories?.nodes?.[0]) return found.categories.nodes[0].id;
-                  const created = await wpGraphQL(
-                    `mutation($name: String!, $slug: String) { createCategory(input: { name: $name, slug: $slug }) { category { id } } }`,
-                    { name, slug }
-                  );
-                  return created.createCategory.category.id;
+                  return found.categories?.nodes?.[0]?.id || null;
                 }
 
                 try {
@@ -111,7 +106,7 @@ jobs:
                     }`,
                     {
                       title: `Closed: ${pr.title}`,
-                      content: `PR #${pr.number} was closed after ${revisionCount} revision attempts. The approach needs rethinking.\n\nReview feedback: ${review.body || 'No details.'}`,
+                      content: `<p><a href="${pr.html_url}">PR #${pr.number}</a> was closed after ${revisionCount} revision attempts. The approach needs rethinking.</p>\n<h2>Review Feedback</h2>\n<p>${review.body || 'No details.'}</p>`,
                       status: 'PUBLISH',
                       ...(categoryId && { categories: { append: true, nodes: [{ id: categoryId }] } }),
                     }
