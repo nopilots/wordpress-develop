@@ -135,3 +135,67 @@ jobs:
           wp-url: ${{ secrets.WP_URL }}
           wp-auth: ${{ secrets.WP_AUTH }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check for test coverage gaps
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const pr = context.payload.pull_request;
+
+            // Get files changed in merged PR
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner, repo, pull_number: pr.number, per_page: 100,
+            });
+
+            // Identify source files that were modified
+            const sourceFiles = files
+              .map(f => f.filename)
+              .filter(f =>
+                (f.startsWith('src/wp-includes/') || f.startsWith('src/wp-admin/')) &&
+                f.endsWith('.php') &&
+                !f.includes('deprecated')
+              );
+
+            // Check if any test files were also modified
+            const testFiles = files
+              .map(f => f.filename)
+              .filter(f => f.startsWith('tests/'));
+
+            if (sourceFiles.length === 0 || testFiles.length > 0) {
+              core.info('Test coverage: OK (tests included or no source changes).');
+              return;
+            }
+
+            // Check for existing coverage issue to avoid duplicates
+            const { data: existing } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'agent', per_page: 50,
+            });
+
+            for (const file of sourceFiles.slice(0, 2)) {
+              const shortFile = file.replace('src/', '');
+              const title = `Add test coverage for ${shortFile}`;
+
+              if (existing.some(i => i.title.toLowerCase() === title.toLowerCase())) {
+                core.info(`Coverage issue already exists for ${shortFile}.`);
+                continue;
+              }
+
+              await github.rest.issues.create({
+                owner, repo,
+                title,
+                body: [
+                  `PR #${pr.number} (${pr.title}) modified \`${file}\` but included no test changes.`,
+                  '',
+                  `**File:** \`${file}\``,
+                  `**PR:** ${pr.html_url}`,
+                  '',
+                  `Review the changes and add test coverage if appropriate.`,
+                  `If existing tests already cover these changes, close this issue with an explanation.`,
+                ].join('\n'),
+                labels: ['agent', 'status:ready'],
+              });
+
+              core.info(`Created coverage issue: ${title}`);
+            }
