@@ -163,8 +163,12 @@ runs:
             if (refineRes.ok) {
               const refineResult = await refineRes.json();
               let refined = refineResult.choices?.[0]?.message?.content || '';
-              // Strip markdown code fences if model wrapped the HTML
-              refined = refined.replace(/^```html?\n?/i, '').replace(/\n?```$/g, '').trim();
+              // Strip markdown artifacts from model output
+              refined = refined
+                .replace(/^```html?\n?/i, '').replace(/\n?```$/g, '')
+                .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                .trim();
               if (refined && !refined.includes('NO_CHANGES')) {
                 await wpGraphQL(
                   `mutation($id: ID!, $content: String!) {
