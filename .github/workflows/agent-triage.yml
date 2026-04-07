@@ -1,0 +1,134 @@
+name: Triage
+
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue number to triage'
+        required: true
+
+permissions:
+  issues: write
+  contents: read
+  models: read
+
+concurrency:
+  group: agent-triage-${{ github.event.issue.number || github.event.inputs.issue_number }}
+  cancel-in-progress: true
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.label.name == 'status:triage')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Evaluate issue
+        uses: actions/github-script@v7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          script: |
+            const fs = require('fs');
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // Kill switch
+            const { data: killSwitch } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'system:off', per_page: 1,
+            });
+            if (killSwitch.length > 0) return;
+
+            const issueNumber = context.payload.issue?.number
+              || parseInt(context.payload.inputs?.issue_number);
+            if (!issueNumber) return;
+
+            const { data: issue } = await github.rest.issues.get({
+              owner, repo, issue_number: issueNumber,
+            });
+
+            // Only triage issues with status:triage label
+            if (!issue.labels.some(l => l.name === 'status:triage')) return;
+
+            // Get existing open issues for duplicate detection
+            const { data: openIssues } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'agent', per_page: 50,
+            });
+            const existingTitles = openIssues
+              .filter(i => i.number !== issueNumber)
+              .map(i => `#${i.number}: ${i.title}`)
+              .join('\n');
+
+            // Get recently closed issues to detect rework
+            const { data: closedIssues } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'closed', labels: 'agent', per_page: 20,
+            });
+            const recentClosed = closedIssues
+              .map(i => `#${i.number}: ${i.title}`)
+              .join('\n');
+
+            // Read governance for scope checking
+            const governance = fs.readFileSync('GOVERNANCE.md', 'utf8');
+
+            const triageRes = await fetch('https://models.github.ai/inference/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${process.env.GITHUB_TOKEN}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                model: 'openai/gpt-4o-mini',
+                messages: [{
+                  role: 'system',
+                  content: `You are a triage specialist for an autonomous WordPress project. Evaluate issues against three criteria:
+1. SCOPE: Is the issue well-defined enough for an agent to implement? Does it name specific files or behaviors?
+2. DUPLICATION: Does it substantially overlap with any open issue listed below?
+3. VALUE: Does it align with WordPress principles and the guardrails in GOVERNANCE.md?
+
+Err on the side of approval. Only reject issues that are clearly duplicative, out of scope, or too vague to act on.
+
+Respond with exactly:
+VERDICT: APPROVE or REJECT
+REASON: one sentence`,
+                }, {
+                  role: 'user',
+                  content: `Issue #${issueNumber}: ${issue.title}\n\n${(issue.body || '').substring(0, 1500)}\n\nOpen issues:\n${existingTitles}\n\nRecently closed:\n${recentClosed}\n\nGovernance:\n${governance.substring(0, 1000)}`,
+                }],
+                max_tokens: 100,
+                temperature: 0.2,
+              }),
+            });
+
+            if (!triageRes.ok) {
+              core.warning('Models API unavailable — approving by default.');
+              await github.rest.issues.removeLabel({ owner, repo, issue_number: issueNumber, name: 'status:triage' }).catch(() => {});
+              await github.rest.issues.addLabels({ owner, repo, issue_number: issueNumber, labels: ['status:ready'] });
+              return;
+            }
+
+            const result = await triageRes.json();
+            const response = result.choices?.[0]?.message?.content || '';
+            const verdict = response.includes('APPROVE') ? 'APPROVE' : 'REJECT';
+            const reason = response.match(/REASON:\s*(.+)/)?.[1]?.trim() || 'No reason provided.';
+
+            if (verdict === 'APPROVE') {
+              await github.rest.issues.removeLabel({ owner, repo, issue_number: issueNumber, name: 'status:triage' }).catch(() => {});
+              await github.rest.issues.addLabels({ owner, repo, issue_number: issueNumber, labels: ['status:ready'] });
+              core.info(`Approved: ${reason}`);
+            } else {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issueNumber,
+                body: `Triage: rejected. ${reason}`,
+              });
+              await github.rest.issues.update({
+                owner, repo, issue_number: issueNumber,
+                state: 'closed', state_reason: 'not_planned',
+              });
+              await github.rest.issues.addLabels({ owner, repo, issue_number: issueNumber, labels: ['status:rejected'] });
+              core.info(`Rejected: ${reason}`);
+            }

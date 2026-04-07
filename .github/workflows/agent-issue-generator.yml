@@ -107,7 +107,7 @@ jobs:
                   owner, repo,
                   title: issue.title,
                   body: issue.body,
-                  labels: ['agent', 'status:ready'],
+                  labels: ['agent', 'status:triage'],
                 });
                 created++;
               } catch (e) {

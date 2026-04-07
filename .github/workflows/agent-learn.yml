@@ -154,7 +154,7 @@ jobs:
                 '',
                 failureContext.substring(0, 1000),
               ].join('\n'),
-              labels: ['agent', 'status:ready'],
+              labels: ['agent', 'status:triage'],
             });
 
             core.info(`Created preventive issue: ${title}`);

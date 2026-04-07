@@ -1,0 +1,123 @@
+name: Metrics
+
+on:
+  schedule:
+    - cron: '0 2 * * 3'
+  workflow_dispatch:
+
+permissions:
+  issues: read
+  pull-requests: read
+  contents: read
+  models: read
+
+concurrency:
+  group: agent-metrics
+  cancel-in-progress: true
+
+jobs:
+  calculate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Calculate and publish metrics
+        uses: actions/github-script@v7
+        env:
+          WP_URL: ${{ secrets.WP_URL }}
+          WP_AUTH: ${{ secrets.WP_AUTH }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // Kill switch
+            const { data: killSwitch } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'system:off', per_page: 1,
+            });
+            if (killSwitch.length > 0) return;
+
+            const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+            // Merged PRs
+            const { data: closedPRs } = await github.rest.pulls.list({
+              owner, repo, state: 'closed', base: 'autopilot', sort: 'updated', direction: 'desc', per_page: 50,
+            });
+            const mergedPRs = closedPRs.filter(pr => pr.merged_at && pr.merged_at > oneWeekAgo);
+            const unmergedPRs = closedPRs.filter(pr => !pr.merged_at && pr.closed_at > oneWeekAgo &&
+              (pr.head.ref.startsWith('agent/') || pr.head.ref.startsWith('copilot/') || pr.head.ref.startsWith('claude/') || pr.head.ref.startsWith('codex/'))
+            );
+
+            // Velocity: time from issue creation to PR merge
+            const velocities = [];
+            for (const pr of mergedPRs) {
+              const bodyMatch = (pr.body || '').match(/closes?\s+#(\d+)/i);
+              const branchMatch = pr.head.ref.match(/(\d+)/);
+              const issueNum = bodyMatch ? parseInt(bodyMatch[1]) : (branchMatch ? parseInt(branchMatch[1]) : null);
+              if (issueNum) {
+                try {
+                  const { data: issue } = await github.rest.issues.get({ owner, repo, issue_number: issueNum });
+                  const hours = (new Date(pr.merged_at) - new Date(issue.created_at)) / (1000 * 60 * 60);
+                  velocities.push(hours);
+                } catch (e) { /* skip */ }
+              }
+            }
+            velocities.sort((a, b) => a - b);
+            const median = velocities.length > 0 ? velocities[Math.floor(velocities.length / 2)] : null;
+            const p90 = velocities.length > 0 ? velocities[Math.floor(velocities.length * 0.9)] : null;
+
+            // Safety incidents
+            const { data: haltIssues } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'all', labels: 'safety:halt', per_page: 50,
+            });
+            const recentHalts = haltIssues.filter(i => new Date(i.created_at) > new Date(oneWeekAgo));
+
+            // Backlog
+            const { data: readyIssues } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'status:ready', per_page: 100,
+            });
+            const { data: triageIssues } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'status:triage', per_page: 100,
+            });
+
+            // Approval rate
+            const totalClosed = mergedPRs.length + unmergedPRs.length;
+            const approvalRate = totalClosed > 0 ? Math.round((mergedPRs.length / totalClosed) * 100) : 0;
+
+            // Build content
+            const weekOf = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+            const content = [
+              `<table>`,
+              `<tr><th>Metric</th><th>Value</th></tr>`,
+              `<tr><td>Merged PRs</td><td>${mergedPRs.length}</td></tr>`,
+              `<tr><td>Approval rate</td><td>${approvalRate}%</td></tr>`,
+              median !== null ? `<tr><td>Median velocity</td><td>${median.toFixed(1)} hours</td></tr>` : '',
+              p90 !== null ? `<tr><td>P90 velocity</td><td>${p90.toFixed(1)} hours</td></tr>` : '',
+              `<tr><td>Course corrections</td><td>${unmergedPRs.length}</td></tr>`,
+              `<tr><td>Safety incidents</td><td>${recentHalts.length}</td></tr>`,
+              `<tr><td>Backlog (ready)</td><td>${readyIssues.length}</td></tr>`,
+              `<tr><td>Backlog (triage)</td><td>${triageIssues.length}</td></tr>`,
+              `</table>`,
+            ].filter(Boolean).join('\n');
+
+            const excerpt = `${mergedPRs.length} merged. ${approvalRate}% approval. ${recentHalts.length} incidents.`;
+
+            core.exportVariable('FLIGHT_LOG_TITLE', `Metrics: ${weekOf}`);
+            core.exportVariable('FLIGHT_LOG_CONTENT', content);
+            core.exportVariable('FLIGHT_LOG_EXCERPT', excerpt);
+
+      - name: Publish to Flight Log
+        if: env.FLIGHT_LOG_TITLE != ''
+        uses: ./.github/actions/publish-to-flight-log
+        with:
+          title: ${{ env.FLIGHT_LOG_TITLE }}
+          content: ${{ env.FLIGHT_LOG_CONTENT }}
+          excerpt: ${{ env.FLIGHT_LOG_EXCERPT }}
+          category-slug: sitrep
+          author-slug: autopilot
+          refine-prompt: 'Review this Metrics Report. Keep the table format. No prose — just the numbers. No AI slop.'
+          wp-url: ${{ secrets.WP_URL }}
+          wp-auth: ${{ secrets.WP_AUTH }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}

@@ -63,6 +63,7 @@ jobs:
                 'corrections',
                 'briefings',
                 'changelog',
+                'executive',
               ];
 
               try {

@@ -1,0 +1,188 @@
+name: Executive
+
+on:
+  schedule:
+    - cron: '0 6 * * 4'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+  contents: write
+  models: read
+
+concurrency:
+  group: agent-executive
+  cancel-in-progress: true
+
+jobs:
+  assess:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Strategic assessment
+        uses: actions/github-script@v7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          script: |
+            const fs = require('fs');
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // Kill switch
+            const { data: killSwitch } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'system:off', per_page: 1,
+            });
+            if (killSwitch.length > 0) return;
+
+            const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+
+            // Gather data from all tiers
+            const { data: closedPRs } = await github.rest.pulls.list({
+              owner, repo, state: 'closed', base: 'autopilot', sort: 'updated', direction: 'desc', per_page: 50,
+            });
+            const mergedPRs = closedPRs.filter(pr => pr.merged_at && pr.merged_at > twoWeeksAgo);
+            const unmergedPRs = closedPRs.filter(pr => !pr.merged_at && pr.closed_at > twoWeeksAgo);
+
+            const { data: haltIssues } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'all', labels: 'safety:halt', per_page: 50,
+            });
+            const recentHalts = haltIssues.filter(i => new Date(i.created_at) > new Date(twoWeeksAgo));
+
+            const { data: readyIssues } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'status:ready', per_page: 100,
+            });
+
+            const { data: rejectedIssues } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'closed', labels: 'status:rejected', per_page: 20,
+            });
+
+            const governance = fs.readFileSync('GOVERNANCE.md', 'utf8');
+
+            // Build context
+            const context_data = [
+              `## Metrics (past 14 days)`,
+              `Merged PRs: ${mergedPRs.length}`,
+              `Closed without merge: ${unmergedPRs.length}`,
+              `Safety incidents: ${recentHalts.length}`,
+              `Rejected by triage: ${rejectedIssues.length}`,
+              `Backlog: ${readyIssues.length} ready issues`,
+              '',
+              `## Recent safety incidents`,
+              recentHalts.map(i => `- #${i.number}: ${i.title}`).join('\n') || 'None.',
+              '',
+              `## Recent course corrections`,
+              unmergedPRs.map(pr => `- #${pr.number}: ${pr.title}`).join('\n') || 'None.',
+              '',
+              `## GOVERNANCE.md (Agent-Determined section)`,
+              governance.split('## Agent-Determined')[1]?.substring(0, 1000) || 'Not found.',
+            ].join('\n');
+
+            const execRes = await fetch('https://models.github.ai/inference/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${process.env.GITHUB_TOKEN}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                model: 'openai/gpt-4o-mini',
+                messages: [{
+                  role: 'system',
+                  content: `You are the Executive of an autonomous AI-governed WordPress project. You assess operational health weekly based on hard data. No speculation — only what the data shows. No AI slop.
+
+Respond in this exact format:
+
+HEALTH: GREEN or YELLOW or RED
+TREND: IMPROVING or STABLE or DECLINING
+
+ASSESSMENT:
+(2 paragraphs max on system state)
+
+PATTERNS:
+(bullet list of recurring issues, or "None identified")
+
+ACTIONS:
+(numbered list, each must be one of:)
+- GOVERNANCE_AMENDMENT: {what to change}
+- PRIORITY_SHIFT: #{issue_number} {high or low}
+- NO_ACTION: {reason}`,
+                }, {
+                  role: 'user',
+                  content: context_data,
+                }],
+                max_tokens: 600,
+                temperature: 0.3,
+              }),
+            });
+
+            if (!execRes.ok) {
+              core.setFailed('Models API unavailable for executive assessment.');
+              return;
+            }
+
+            const result = await execRes.json();
+            const assessment = result.choices?.[0]?.message?.content || '';
+
+            // Parse structured response
+            const health = assessment.match(/HEALTH:\s*(GREEN|YELLOW|RED)/)?.[1] || 'UNKNOWN';
+            const trend = assessment.match(/TREND:\s*(IMPROVING|STABLE|DECLINING)/)?.[1] || 'UNKNOWN';
+
+            // Build post content
+            const postContent = [
+              `<p><strong>Health:</strong> ${health} | <strong>Trend:</strong> ${trend}</p>`,
+              assessment
+                .replace(/HEALTH:.*\n?/, '')
+                .replace(/TREND:.*\n?/, '')
+                .replace(/ASSESSMENT:\n?/g, '<h2>Assessment</h2>\n')
+                .replace(/PATTERNS:\n?/g, '<h2>Patterns</h2>\n')
+                .replace(/ACTIONS:\n?/g, '<h2>Actions</h2>\n')
+                .replace(/^- (.+)$/gm, '<li>$1</li>')
+                .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
+                .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
+                .replace(/^(?!<[huplo])(.*\S.*)$/gm, '<p>$1</p>')
+                .replace(/<p><li>/g, '<li>')
+                .replace(/<\/li><\/p>/g, '</li>'),
+            ].join('\n');
+
+            const weekOf = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+            core.exportVariable('FLIGHT_LOG_TITLE', weekOf);
+            core.exportVariable('FLIGHT_LOG_CONTENT', postContent);
+            core.exportVariable('FLIGHT_LOG_EXCERPT', `Health: ${health}. Trend: ${trend}.`);
+
+            // Handle governance amendments if proposed
+            if (assessment.includes('GOVERNANCE_AMENDMENT:')) {
+              const amendment = assessment.match(/GOVERNANCE_AMENDMENT:\s*(.+)/)?.[1]?.trim();
+              if (amendment) {
+                core.info(`Governance amendment proposed: ${amendment}`);
+                await github.rest.issues.create({
+                  owner, repo,
+                  title: `Governance amendment: ${amendment.substring(0, 80)}`,
+                  body: [
+                    `The Executive assessment proposed a governance change.`,
+                    '',
+                    `**Proposed change:** ${amendment}`,
+                    '',
+                    `Review the proposal and submit a PR to \`GOVERNANCE.md\` if appropriate.`,
+                  ].join('\n'),
+                  labels: ['agent', 'type:governance', 'status:triage'],
+                });
+              }
+            }
+
+      - name: Publish to Flight Log
+        if: env.FLIGHT_LOG_TITLE != ''
+        uses: ./.github/actions/publish-to-flight-log
+        with:
+          title: ${{ env.FLIGHT_LOG_TITLE }}
+          content: ${{ env.FLIGHT_LOG_CONTENT }}
+          excerpt: ${{ env.FLIGHT_LOG_EXCERPT }}
+          category-slug: executive
+          author-slug: autopilot
+          refine-prompt: 'Review this Executive Brief. Keep the health/trend header. Keep it factual. No AI slop.'
+          wp-url: ${{ secrets.WP_URL }}
+          wp-auth: ${{ secrets.WP_AUTH }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}

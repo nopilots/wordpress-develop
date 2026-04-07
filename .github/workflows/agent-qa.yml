@@ -1,0 +1,137 @@
+name: QA
+
+on:
+  push:
+    branches: [autopilot]
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+  actions: read
+
+concurrency:
+  group: agent-qa
+  cancel-in-progress: true
+
+jobs:
+  run-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mysqli, dom, xml, mbstring, zip, gd, intl
+          tools: composer, phpunit
+          coverage: none
+
+      - name: Install Composer dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build WordPress
+        run: npm run build:dev
+
+      - name: Run PHPUnit
+        id: phpunit
+        run: |
+          if vendor/bin/phpunit --testsuite=default --no-coverage 2>&1 | tail -20; then
+            echo "result=pass" >> $GITHUB_OUTPUT
+          else
+            echo "result=fail" >> $GITHUB_OUTPUT
+          fi
+        continue-on-error: true
+
+  handle-results:
+    runs-on: ubuntu-latest
+    needs: [run-tests]
+    if: always()
+    steps:
+      - name: Handle QA results
+        uses: actions/github-script@v7
+        env:
+          TEST_RESULT: ${{ needs.run-tests.result }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // Kill switch
+            const { data: killSwitch } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'system:off', per_page: 1,
+            });
+            if (killSwitch.length > 0) return;
+
+            const testResult = process.env.TEST_RESULT;
+
+            // Check for existing QA issues
+            const { data: qaIssues } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', per_page: 50,
+            });
+            const openQA = qaIssues.filter(i => i.title.startsWith('[QA]'));
+
+            if (testResult === 'failure') {
+              if (openQA.length > 0) {
+                core.info('QA issue already open.');
+                return;
+              }
+
+              // Get the latest commit for context
+              const { data: commits } = await github.rest.repos.listCommits({
+                owner, repo, sha: 'autopilot', per_page: 1,
+              });
+              const latest = commits[0];
+
+              await github.rest.issues.create({
+                owner, repo,
+                title: `[QA] Test regression on autopilot`,
+                body: [
+                  `PHPUnit tests failed on the \`autopilot\` branch.`,
+                  '',
+                  `**Latest commit:** ${latest.sha.substring(0, 7)} — ${latest.commit.message.split('\n')[0]}`,
+                  `**Author:** ${latest.commit.author.name}`,
+                  '',
+                  `## Task`,
+                  '',
+                  `1. Investigate the failing tests`,
+                  `2. Determine if this is a code regression or a flaky test`,
+                  `3. Fix the regression or document why the test is invalid`,
+                  `4. Close this issue when tests pass`,
+                ].join('\n'),
+                labels: ['agent', 'status:ready', 'safety:halt'],
+              });
+
+              core.setFailed('QA: tests failed on autopilot.');
+            } else {
+              // Auto-close QA issues on success
+              for (const issue of openQA) {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: issue.number,
+                  body: 'Tests passing again. Auto-closing.',
+                });
+                await github.rest.issues.update({
+                  owner, repo, issue_number: issue.number,
+                  state: 'closed', state_reason: 'completed',
+                });
+                await github.rest.issues.removeLabel({
+                  owner, repo, issue_number: issue.number, name: 'safety:halt',
+                }).catch(() => {});
+                core.info(`Auto-closed QA issue #${issue.number}.`);
+              }
+
+              core.info('QA: all tests passing.');
+            }

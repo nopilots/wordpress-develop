@@ -1,0 +1,158 @@
+name: Architect
+
+on:
+  push:
+    branches: [autopilot]
+    paths:
+      - '.github/workflows/agent-*.yml'
+      - '.github/actions/**'
+  schedule:
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: agent-architect
+  cancel-in-progress: true
+
+jobs:
+  diagram:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate architecture diagram
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            // Kill switch
+            const { data: killSwitch } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open', labels: 'system:off', per_page: 1,
+            });
+            if (killSwitch.length > 0) return;
+
+            // Read all agent workflow files
+            const workflowDir = '.github/workflows';
+            const files = fs.readdirSync(workflowDir)
+              .filter(f => f.startsWith('agent-') && f.endsWith('.yml'));
+
+            const workflows = [];
+            for (const file of files) {
+              const content = fs.readFileSync(path.join(workflowDir, file), 'utf8');
+              const name = content.match(/^name:\s*(.+)/m)?.[1]?.trim() || file;
+              const triggers = [];
+
+              if (content.includes('schedule:')) triggers.push('schedule');
+              if (content.includes('workflow_dispatch')) triggers.push('manual');
+              if (content.includes('pull_request_target')) triggers.push('PR event');
+              if (content.includes('pull_request_review')) triggers.push('review event');
+              if (content.includes('issues:')) triggers.push('issue event');
+              if (content.includes('push:')) triggers.push('push');
+              if (content.includes('check_suite:')) triggers.push('check_suite');
+              if (content.includes('discussion')) triggers.push('discussion');
+
+              const tier = file.includes('executive') ? 3
+                : (file.includes('qa') || file.includes('metrics') || file.includes('triage')) ? 2
+                : 0;
+
+              workflows.push({ file, name, triggers, tier });
+            }
+
+            // Check for composite actions
+            const actionsDir = '.github/actions';
+            const actions = [];
+            if (fs.existsSync(actionsDir)) {
+              const actionDirs = fs.readdirSync(actionsDir);
+              for (const dir of actionDirs) {
+                const actionFile = path.join(actionsDir, dir, 'action.yml');
+                if (fs.existsSync(actionFile)) {
+                  actions.push(dir);
+                }
+              }
+            }
+
+            const tier1 = workflows.filter(w => w.tier === 0);
+            const tier2 = workflows.filter(w => w.tier === 2);
+            const tier3 = workflows.filter(w => w.tier === 3);
+
+            // Generate Mermaid diagram
+            const mermaid = [
+              '```mermaid',
+              'graph TD',
+              '',
+              '    subgraph "Tier 3 — Executive"',
+              ...tier3.map(w => `        ${w.file.replace('agent-', '').replace('.yml', '').toUpperCase()}["${w.name}"]`),
+              '    end',
+              '',
+              '    subgraph "Tier 2 — Supervisors"',
+              ...tier2.map(w => `        ${w.file.replace('agent-', '').replace('.yml', '').toUpperCase()}["${w.name}"]`),
+              '    end',
+              '',
+              '    subgraph "Tier 1 — Workers"',
+              ...tier1.map(w => `        ${w.file.replace('agent-', '').replace('.yml', '').toUpperCase()}["${w.name}"]`),
+              '    end',
+              '',
+              '    %% Data flows',
+              '    ISSUE-GENERATOR -->|status:triage| TRIAGE',
+              '    LEARN -->|status:triage| TRIAGE',
+              '    TRIAGE -->|status:ready| COORDINATOR',
+              '    COORDINATOR -->|assigns| READY["Draft Converter"]',
+              '    READY -->|ready_for_review| REVIEW',
+              '    REVIEW -->|approve| MERGE["Auto-Merge"]',
+              '    REVIEW -->|reject| REVISE',
+              '    MERGE -->|merged| CLEANUP',
+              '    CLEANUP -->|push to autopilot| QA',
+              '    CLEANUP -->|publishes| FL["Flight Log"]',
+              '    QA -->|failure| SAFETY',
+              '    METRICS -->|data| EXECUTIVE',
+              '    EXECUTIVE -->|governance PR| REVIEW',
+              '',
+              ...actions.map(a => `    %% Composite action: ${a}`),
+              '```',
+            ].join('\n');
+
+            const now = new Date().toISOString().split('T')[0];
+            const doc = [
+              '# Architecture',
+              '',
+              `Auto-generated on ${now} by the Architect workflow. Do not edit manually.`,
+              '',
+              `## System Overview`,
+              '',
+              `**${workflows.length} agent workflows** across 3 tiers, plus ${actions.length} composite action(s).`,
+              '',
+              '## Diagram',
+              '',
+              mermaid,
+              '',
+              '## Workflows',
+              '',
+              '| Name | File | Tier | Triggers |',
+              '|---|---|---|---|',
+              ...workflows.map(w => `| ${w.name} | \`${w.file}\` | ${w.tier === 3 ? 'Executive' : w.tier === 2 ? 'Supervisor' : 'Worker'} | ${w.triggers.join(', ')} |`),
+              '',
+              '## Composite Actions',
+              '',
+              ...actions.map(a => `- \`${a}\``),
+              '',
+            ].join('\n');
+
+            fs.writeFileSync('ARCHITECTURE.md', doc);
+            core.info(`Generated ARCHITECTURE.md with ${workflows.length} workflows.`);
+
+      - name: Commit diagram
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add ARCHITECTURE.md
+          git diff --staged --quiet || git commit -m 'Update architecture diagram' && git push
