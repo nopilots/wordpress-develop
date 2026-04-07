@@ -67,19 +67,43 @@ jobs:
               const wpUrl = process.env.WP_URL;
               const wpAuth = process.env.WP_AUTH;
               if (wpUrl && wpAuth) {
-                const wpRes = await fetch(`${wpUrl}/wp-json/wp/v2/posts`, {
-                  method: 'POST',
-                  headers: {
-                    'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({
-                    title: `Closed: ${pr.title}`,
-                    content: `PR #${pr.number} was closed after ${revisionCount} revision attempts. The approach needs rethinking.\n\nReview feedback: ${review.body || 'No details.'}`,
-                    status: 'publish',
-                  }),
-                });
-                if (wpRes.ok) core.info('Published rejection learning to The Flight Log.');
+                const wpGraphQL = async (query, variables = {}) => {
+                  const res = await fetch(`${wpUrl}/graphql`, {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ query, variables }),
+                  });
+                  if (!res.ok) {
+                    const text = await res.text();
+                    throw new Error(`WPGraphQL HTTP ${res.status}: ${text}`);
+                  }
+                  const json = await res.json();
+                  if (json.errors) {
+                    throw new Error(`WPGraphQL error: ${JSON.stringify(json.errors)}`);
+                  }
+                  return json.data;
+                };
+
+                try {
+                  const data = await wpGraphQL(
+                    `mutation CreatePost($title: String!, $content: String!, $status: PostStatusEnum!) {
+                      createPost(input: { title: $title, content: $content, status: $status }) {
+                        post { id uri link }
+                      }
+                    }`,
+                    {
+                      title: `Closed: ${pr.title}`,
+                      content: `PR #${pr.number} was closed after ${revisionCount} revision attempts. The approach needs rethinking.\n\nReview feedback: ${review.body || 'No details.'}`,
+                      status: 'PUBLISH',
+                    }
+                  );
+                  core.info(`Published rejection learning to The Flight Log: ${data.createPost.post.link}`);
+                } catch (err) {
+                  core.setFailed(`Flight Log publish failed: ${err.message}`);
+                }
               }
 
               return;

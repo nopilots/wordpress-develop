@@ -115,24 +115,41 @@ jobs:
               postContent = result.choices?.[0]?.message?.content || postContent;
             }
 
-            // Publish to WordPress
-            const wpRes = await fetch(`${wpUrl}/wp-json/wp/v2/posts`, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                title: `Merged: ${pr.title}`,
-                content: postContent,
-                status: 'publish',
-              }),
-            });
+            // Publish to WordPress via WPGraphQL
+            const wpGraphQL = async (query, variables = {}) => {
+              const res = await fetch(`${wpUrl}/graphql`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ query, variables }),
+              });
+              if (!res.ok) {
+                const text = await res.text();
+                throw new Error(`WPGraphQL HTTP ${res.status}: ${text}`);
+              }
+              const json = await res.json();
+              if (json.errors) {
+                throw new Error(`WPGraphQL error: ${JSON.stringify(json.errors)}`);
+              }
+              return json.data;
+            };
 
-            if (wpRes.ok) {
-              const post = await wpRes.json();
-              core.info(`Published to The Flight Log: ${post.link}`);
-            } else {
-              const err = await wpRes.text();
-              core.warning(`Failed to publish: ${err}`);
+            try {
+              const data = await wpGraphQL(
+                `mutation CreatePost($title: String!, $content: String!, $status: PostStatusEnum!) {
+                  createPost(input: { title: $title, content: $content, status: $status }) {
+                    post { id uri link }
+                  }
+                }`,
+                {
+                  title: `Merged: ${pr.title}`,
+                  content: postContent,
+                  status: 'PUBLISH',
+                }
+              );
+              core.info(`Published to The Flight Log: ${data.createPost.post.link}`);
+            } catch (err) {
+              core.setFailed(`Flight Log publish failed: ${err.message}`);
             }
