@@ -97,21 +97,27 @@ jobs:
               for (const author of requiredAuthors) {
                 try {
                   const url = `${wpUrl}/wp-json/wp/v2/users?slug=${author}`;
-                  core.info(`Checking author "${author}" at ${url}...`);
+                  core.info(`Checking author "${author}"...`);
                   const authorRes = await fetch(url, {
                     headers: {
                       'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
                     },
+                    redirect: 'follow',
                   });
+                  core.info(`  → HTTP ${authorRes.status} (${authorRes.url})`);
+                  const text = await authorRes.text();
                   if (authorRes.ok) {
-                    const users = await authorRes.json();
-                    if (users.length > 0) {
-                      core.info(`Author "${author}": OK`);
-                    } else {
-                      failures.push(`Author "${author}" not found in WordPress.`);
+                    try {
+                      const users = JSON.parse(text);
+                      if (Array.isArray(users) && users.length > 0) {
+                        core.info(`Author "${author}": OK`);
+                      } else {
+                        failures.push(`Author "${author}" not found in WordPress.`);
+                      }
+                    } catch (parseErr) {
+                      failures.push(`Author "${author}": response is not JSON — ${text.substring(0, 100)}`);
                     }
                   } else {
-                    const text = await authorRes.text();
                     failures.push(`Author "${author}": HTTP ${authorRes.status} — ${text.substring(0, 200)}`);
                   }
                 } catch (e) {
