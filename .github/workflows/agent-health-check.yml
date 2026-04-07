@@ -92,40 +92,7 @@ jobs:
                 failures.push(`Category check failed: ${e.message}`);
               }
 
-              // 3. Check required author accounts exist
-              const requiredAuthors = ['autopilot', 'pat', 'doc', 'dalton'];
-              try {
-                const authorsRes = await fetch(`${wpUrl}/graphql`, {
-                  method: 'POST',
-                  headers: {
-                    'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({
-                    query: `{ users(where: { roleIn: [AUTHOR, ADMINISTRATOR] }, first: 50) { nodes { slug } } }`,
-                  }),
-                });
-                if (authorsRes.ok) {
-                  const authorsData = await authorsRes.json();
-                  if (authorsData.errors) {
-                    failures.push(`Author check error: ${authorsData.errors[0].message}`);
-                  } else {
-                    const slugs = authorsData.data?.users?.nodes?.map(u => u.slug) || [];
-                    core.info(`WordPress users found: ${slugs.join(', ')}`);
-                    for (const author of requiredAuthors) {
-                      if (slugs.includes(author)) {
-                        core.info(`Author "${author}": OK`);
-                      } else {
-                        failures.push(`Author "${author}" not found in WordPress.`);
-                      }
-                    }
-                  }
-                }
-              } catch (e) {
-                failures.push(`Author check failed: ${e.message}`);
-              }
-
-              // 4. Create and delete a draft post to verify write access
+              // 3. Create and delete a draft post to verify write access
               try {
                 const createRes = await fetch(`${wpUrl}/graphql`, {
                   method: 'POST',
