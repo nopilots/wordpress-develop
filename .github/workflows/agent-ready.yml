@@ -4,7 +4,7 @@ on:
   check_suite:
     types: [completed]
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '*/10 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -70,7 +70,7 @@ jobs:
               const lastCommit = new Date(commits[commits.length - 1].commit.committer.date);
               const minutesSinceLastCommit = (Date.now() - lastCommit.getTime()) / (1000 * 60);
 
-              if (minutesSinceLastCommit < 10) {
+              if (minutesSinceLastCommit < 5) {
                 core.info(`PR #${pr.number}: still active (${minutesSinceLastCommit.toFixed(0)}m). Skipping.`);
                 continue;
               }
