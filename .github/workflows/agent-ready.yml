@@ -75,23 +75,19 @@ jobs:
 
               try {
                 const appToken = process.env.APP_TOKEN;
-                const res = await fetch('https://api.github.com/graphql', {
-                  method: 'POST',
+                const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls/${pr.number}`, {
+                  method: 'PATCH',
                   headers: {
                     'Authorization': `Bearer ${appToken}`,
                     'Content-Type': 'application/json',
+                    'Accept': 'application/vnd.github+json',
                   },
-                  body: JSON.stringify({
-                    query: `mutation($id: ID!) {
-                      markPullRequestReadyForReview(input: { pullRequestId: $id }) {
-                        pullRequest { number }
-                      }
-                    }`,
-                    variables: { id: pr.node_id },
-                  }),
+                  body: JSON.stringify({ draft: false }),
                 });
-                const result = await res.json();
-                if (result.errors) throw new Error(result.errors[0].message);
+                if (!res.ok) {
+                  const err = await res.text();
+                  throw new Error(err);
+                }
 
                 core.info(`Marked PR #${pr.number} as ready for review.`);
               } catch (e) {
