@@ -122,8 +122,38 @@ class WP_HTML_Active_Formatting_Elements {
 		 * > paired such that the two attributes in each pair have identical names, namespaces, and values
 		 * > (the order of the attributes does not matter).
 		 *
-		 * @todo Implement the "Noah's Ark clause" to only add up to three of any given kind of formatting elements to the stack.
+		 * This is the "Noah's Ark clause": at most three of any equivalent formatting element
+		 * may exist in the list between any two markers (or from the start of the list if there
+		 * are no markers). When a fourth would be added, the earliest matching element is removed.
+		 *
+		 * Note: `comparable_attributes` must be set on the token (not null) for this check to
+		 * apply. Marker tokens and virtual tokens without attributes collected are excluded.
 		 */
+		if ( isset( $token->comparable_attributes ) ) {
+			$matching_count  = 0;
+			$earliest_match  = null;
+
+			foreach ( $this->walk_up() as $item ) {
+				if ( 'marker' === $item->node_name ) {
+					break;
+				}
+
+				if (
+					$item->node_name === $token->node_name &&
+					$item->namespace === $token->namespace &&
+					$item->comparable_attributes === $token->comparable_attributes
+				) {
+					++$matching_count;
+					// walk_up() goes newest-to-oldest; the last assignment is the oldest match.
+					$earliest_match = $item;
+				}
+			}
+
+			if ( $matching_count >= 3 ) {
+				$this->remove_node( $earliest_match );
+			}
+		}
+
 		// > Add element to the list of active formatting elements.
 		$this->stack[] = $token;
 	}
