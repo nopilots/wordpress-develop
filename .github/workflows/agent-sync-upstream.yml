@@ -118,15 +118,15 @@ jobs:
 
             async function ensureCategory(name, slug) {
               const found = await wpGraphQL(
-                `query($slug: [String]) { categories(where: { slug: $slug }) { nodes { databaseId } } }`,
+                `query($slug: [String]) { categories(where: { slug: $slug }) { nodes { id } } }`,
                 { slug: [slug] }
               );
-              if (found.categories?.nodes?.[0]) return found.categories.nodes[0].databaseId;
+              if (found.categories?.nodes?.[0]) return found.categories.nodes[0].id;
               const created = await wpGraphQL(
-                `mutation($name: String!, $slug: String) { createCategory(input: { name: $name, slug: $slug }) { category { databaseId } } }`,
+                `mutation($name: String!, $slug: String) { createCategory(input: { name: $name, slug: $slug }) { category { id } } }`,
                 { name, slug }
               );
-              return created.createCategory.category.databaseId;
+              return created.createCategory.category.id;
             }
 
             const current = process.env.CURRENT_VERSION;
