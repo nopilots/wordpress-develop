@@ -1815,12 +1815,11 @@ class WP_HTML_Tag_Processor {
 					$span_of_dashes = strspn( $html, '-', $closer_at );
 					if ( '>' === $html[ $closer_at + $span_of_dashes ] ) {
 						/*
-						 * @todo When implementing `set_modifiable_text()` ensure that updates to this token
-						 *       don't break the syntax for short comments, e.g. `<!--->`. Unlike other comment
-						 *       and bogus comment syntax, these leave no clear insertion point for text and
-						 *       they need to be modified specially in order to contain text. E.g. to store
-						 *       `?` as the modifiable text, the `<!--->` needs to become `<!--?-->`, which
-						 *       involves inserting an additional `-` into the token after the modifiable text.
+						 * Abruptly-closed comments like `<!-->`  and `<!--->` have no clear insertion point
+						 * for modifiable text. Unlike standard HTML comments, these short forms must be
+						 * restructured to hold text. For example, setting `?` as the modifiable text
+						 * transforms `<!--->` into `<!--?-->`, requiring an additional `-` to be inserted
+						 * after the modifiable text. This restructuring is handled by `set_modifiable_text()`.
 						 */
 						$this->parser_state = self::STATE_COMMENT;
 						$this->comment_type = self::COMMENT_AS_ABRUPTLY_CLOSED_COMMENT;
@@ -3652,6 +3651,19 @@ class WP_HTML_Tag_Processor {
 			: substr( $this->html, $this->text_starts_at, $this->text_length );
 
 		/*
+		 * For abruptly-closed comments (e.g. `<!-->`  and `<!--->`) the stored replacement
+		 * text includes a trailing `-->` to convert the short form into a valid HTML comment.
+		 * Strip that suffix here so that only the logical text content is returned.
+		 */
+		if (
+			$has_enqueued_update &&
+			self::STATE_COMMENT === $this->parser_state &&
+			self::COMMENT_AS_ABRUPTLY_CLOSED_COMMENT === $this->comment_type
+		) {
+			$text = substr( $text, 0, strlen( $text ) - 3 );
+		}
+
+		/*
 		 * Pre-processing the input stream would normally happen before
 		 * any parsing is done, but deferring it means it's possible to
 		 * skip in most cases. When getting the modifiable text, however
@@ -3814,6 +3826,34 @@ class WP_HTML_Tag_Processor {
 				$this->text_starts_at,
 				$this->text_length,
 				$plaintext_content
+			);
+
+			return true;
+		}
+
+		/*
+		 * Abruptly-closed comments like `<!-->`  and `<!--->` have no text region, so the
+		 * token must be restructured into a proper HTML comment to hold the new text.
+		 * For example, `<!--->` with text "X" becomes `<!--X-->`.
+		 *
+		 * To achieve this, everything after `<!--` is replaced with `{text}-->`, converting
+		 * the short form into a standard comment. The trailing `-->` is stored as part of
+		 * the replacement so that `get_updated_html()` produces valid HTML, and is stripped
+		 * when `get_modifiable_text()` reads the value back.
+		 */
+		if (
+			self::STATE_COMMENT === $this->parser_state &&
+			self::COMMENT_AS_ABRUPTLY_CLOSED_COMMENT === $this->comment_type
+		) {
+			// Check if the text could close the comment.
+			if ( 1 === preg_match( '/--!?>/', $plaintext_content ) ) {
+				return false;
+			}
+
+			$this->lexical_updates['modifiable text'] = new WP_HTML_Text_Replacement(
+				$this->token_starts_at + 4,
+				$this->token_length - 4,
+				"{$plaintext_content}-->"
 			);
 
 			return true;

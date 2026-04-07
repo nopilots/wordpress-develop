@@ -382,8 +382,6 @@ HTML
 			'Incomplete document'          => array( '<tag without="an end', 1 ),
 			'Presumptuous closer'          => array( 'before</>after', 2 ),
 			'Invalid (CDATA)'              => array( '<![CDATA[this is a comment]]>', 1 ),
-			'Invalid (shortest comment)'   => array( '<!-->', 1 ),
-			'Invalid (shorter comment)'    => array( '<!--->', 1 ),
 			'Invalid (markup declaration)' => array( '<!run>', 1 ),
 			'Invalid (PI-like node)'       => array( '<?xml is not html ?>', 1 ),
 		);
@@ -438,6 +436,11 @@ HTML
 			'TITLE tag'               => array( 'a<title>has no need to escape</title>b', 2, "so it <doesn't>", "a<title>so it <doesn't></title>b" ),
 			'TITLE (escape)'          => array( 'a<title>has no need to escape</title>b', 2, 'but it does for </title>', 'a<title>but it does for &lt;/title></title>b' ),
 			'TITLE (escape+attrs)'    => array( 'a<title>has no need to escape</title>b', 2, 'but it does for </title not an="attribute">', 'a<title>but it does for &lt;/title not an="attribute"></title>b' ),
+			// Abruptly-closed comments are restructured into proper HTML comments when given modifiable text.
+			'Abruptly-closed comment (shortest: <!-->)'  => array( '<!-->', 1, 'hello', '<!--hello-->' ),
+			'Abruptly-closed comment (shorter: <!--->)'  => array( '<!--->', 1, 'hello', '<!--hello-->' ),
+			'Abruptly-closed comment (empty text)'       => array( '<!-->', 1, '', '<!---->' ),
+			'Abruptly-closed comment with surrounding HTML' => array( 'before<!-->after', 2, 'X', 'before<!--X-->after' ),
 		);
 	}
 
@@ -719,5 +722,73 @@ HTML;
 			'math STYLE'                 => array( '<style></style>', 'math', 'STYLE' ),
 			'math SCRIPT'                => array( '<script></script>', 'math', 'SCRIPT' ),
 		);
+	}
+
+	/**
+	 * Ensures `get_modifiable_text()` returns only the text content after `set_modifiable_text()`
+	 * is called on an abruptly-closed comment, not the structural `-->` closing sequence.
+	 *
+	 * @ticket 62616
+	 */
+	public function test_get_modifiable_text_is_consistent_after_writing_to_abruptly_closed_comment(): void {
+		foreach (
+			array(
+				'shortest (<!-->)' => '<!-->',
+				'shorter (<!--->)' => '<!--->',
+			) as $label => $html
+		) {
+			$processor = new WP_HTML_Tag_Processor( $html );
+			$processor->next_token();
+
+			$this->assertSame(
+				WP_HTML_Tag_Processor::COMMENT_AS_ABRUPTLY_CLOSED_COMMENT,
+				$processor->get_comment_type(),
+				"Should have found an abruptly-closed comment token ({$label}): check test setup."
+			);
+
+			$this->assertTrue(
+				$processor->set_modifiable_text( 'test content' ),
+				"set_modifiable_text() should succeed for abruptly-closed comment ({$label})."
+			);
+
+			$this->assertSame(
+				'test content',
+				$processor->get_modifiable_text(),
+				"get_modifiable_text() should return the set text, not include the `-->` suffix ({$label})."
+			);
+		}
+	}
+
+	/**
+	 * Ensures `set_modifiable_text()` rejects text that would prematurely close an
+	 * abruptly-closed comment when it is restructured into a proper HTML comment.
+	 *
+	 * @ticket 62616
+	 */
+	public function test_rejects_dangerous_updates_on_abruptly_closed_comments(): void {
+		foreach (
+			array( '-->', '--!>' ) as $dangerous_text
+		) {
+			foreach (
+				array(
+					'shortest (<!-->)' => '<!-->',
+					'shorter (<!--->)' => '<!--->',
+				) as $label => $html
+			) {
+				$processor = new WP_HTML_Tag_Processor( $html );
+				$processor->next_token();
+
+				$this->assertFalse(
+					$processor->set_modifiable_text( "before {$dangerous_text} after" ),
+					"set_modifiable_text() should reject text containing `{$dangerous_text}` in abruptly-closed comment ({$label})."
+				);
+
+				$this->assertSame(
+					$html,
+					$processor->get_updated_html(),
+					"HTML should be unchanged after rejected set_modifiable_text() ({$label})."
+				);
+			}
+		}
 	}
 }
