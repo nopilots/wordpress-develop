@@ -33,7 +33,7 @@ jobs:
       - name: Assign ready issues to agents
         uses: actions/github-script@v7
         env:
-          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          COPILOT_PAT: ${{ secrets.COPILOT_PAT }}
         with:
           script: |
             const owner = context.repo.owner;
@@ -115,13 +115,13 @@ jobs:
 
             core.info(`Selected agent: ${agent.login} (${agent.id})`);
 
-            // App token GraphQL client for mutations (bot identity, no human)
-            const appToken = process.env.APP_TOKEN;
-            const appGraphql = async (query, variables) => {
+            // Use COPILOT_PAT for assignment mutation (required for coding agents)
+            const copilotPat = process.env.COPILOT_PAT;
+            const patGraphql = async (query, variables) => {
               const res = await fetch('https://api.github.com/graphql', {
                 method: 'POST',
                 headers: {
-                  'Authorization': `Bearer ${appToken}`,
+                  'Authorization': `Bearer ${copilotPat}`,
                   'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ query, variables }),
@@ -155,7 +155,7 @@ jobs:
 
                 const actorIds = JSON.stringify([agent.id, ...currentAssignees]);
 
-                const assignResult = await appGraphql(`
+                const assignResult = await patGraphql(`
                   mutation($input: ReplaceActorsForAssignableInput!) {
                     replaceActorsForAssignable(input: $input) { __typename }
                   }
