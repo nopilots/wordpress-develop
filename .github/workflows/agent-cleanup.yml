@@ -129,7 +129,7 @@ jobs:
           title: ${{ env.FLIGHT_LOG_TITLE }}
           content: ${{ env.FLIGHT_LOG_CONTENT }}
           excerpt: ${{ env.FLIGHT_LOG_EXCERPT }}
-          category-slug: flight-log
+          category-slug: log
           author-slug: autopilot
           refine-prompt: 'Review and refine this Flight Log post about a merged PR. Fix any raw markdown, ensure clean HTML, keep it concise and polished.'
           wp-url: ${{ secrets.WP_URL }}

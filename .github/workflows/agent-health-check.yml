@@ -57,11 +57,11 @@ jobs:
 
               // 2. Check all required categories exist
               const requiredCategories = [
-                'flight-log',
-                'preflight-review',
-                'status-report',
-                'course-correction',
-                'crew-briefing',
+                'log',
+                'preflight',
+                'sitrep',
+                'corrections',
+                'briefings',
                 'changelog',
               ];
 

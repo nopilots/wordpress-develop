@@ -157,7 +157,7 @@ jobs:
           title: ${{ env.FLIGHT_LOG_TITLE }}
           content: ${{ env.FLIGHT_LOG_CONTENT }}
           excerpt: ${{ env.FLIGHT_LOG_EXCERPT }}
-          category-slug: status-report
+          category-slug: sitrep
           author-slug: autopilot
           refine-prompt: 'Review and refine this Status Report. Fix any raw markdown, ensure clean HTML. Keep it concise — merged PRs, stale work, incidents.'
           wp-url: ${{ secrets.WP_URL }}
