@@ -323,31 +323,26 @@ jobs:
                 try {
                   const categoryId = await findCategory('preflight-review');
                   if (!categoryId) core.warning('Category "preflight-review" not found — publishing without category.');
-                  // Convert markdown to basic HTML for WordPress
-                  function mdToHtml(md) {
-                    if (!md) return '<p>Review unavailable.</p>';
-                    return md
-                      .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
-                      .replace(/`([^`]+)`/g, '<code>$1</code>')
-                      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-                      .replace(/^\- (.+)$/gm, '<li>$1</li>')
-                      .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
-                      .replace(/^(?!<[huplo])(.*\S.*)$/gm, '<p>$1</p>')
-                      .replace(/<p><li>/g, '<li>')
-                      .replace(/<\/li><\/p>/g, '</li>');
-                  }
+                  // Extract first meaningful line from PR body as summary
+                  const firstLine = (pr.body || '')
+                    .split('\n')
+                    .map(l => l.trim())
+                    .find(l => l.length > 10 && !l.startsWith('#') && !l.startsWith('- [')) || '';
+
+                  // Extract Pat's rationale (strip the DECISION line)
+                  const patRationale = (patReview || '')
+                    .replace(/DECISION:\s*(APPROVE|REQUEST_CHANGES)/g, '')
+                    .replace(/```[\s\S]*?```/g, '')
+                    .replace(/\*\*/g, '')
+                    .trim()
+                    .substring(0, 500);
 
                   const reviewContent = [
-                    `<h2><a href="${pr.html_url}">PR #${prNumber}</a>: ${pr.title}</h2>`,
-                    `<p>${pr.body || 'No description.'}</p>`,
-                    `<h2>Doc (Code Quality)</h2>`,
-                    mdToHtml(docReview),
-                    `<h2>Dalton (Security)</h2>`,
-                    mdToHtml(daltonReview),
-                    `<h2>Pat (Final Decision)</h2>`,
-                    mdToHtml(patReview),
-                    `<p><strong>Decision: ${event}</strong></p>`,
-                  ].join('\n');
+                    `<p><a href="${pr.html_url}">View PR #${prNumber} on GitHub →</a></p>`,
+                    firstLine ? `<p>${firstLine}</p>` : '',
+                    `<h2>Verdict: ${event === 'APPROVE' ? 'Approved' : 'Changes Requested'}</h2>`,
+                    `<p>${patRationale}</p>`,
+                  ].filter(Boolean).join('\n');
 
                   const wpData = await wpGraphQL(
                     `mutation CreatePost($title: String!, $content: String!, $status: PostStatusEnum!, $categories: PostCategoriesInput) {
@@ -356,7 +351,7 @@ jobs:
                       }
                     }`,
                     {
-                      title: `Preflight: ${pr.title}`,
+                      title: pr.title,
                       content: reviewContent,
                       status: 'PUBLISH',
                       ...(categoryId && { categories: { append: true, nodes: [{ id: categoryId }] } }),

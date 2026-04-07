@@ -285,7 +285,7 @@ jobs:
                         }
                       }`,
                       {
-                        title: `Crew Briefing: ${discussion.title}`,
+                        title: discussion.title,
                         content: decisionContent,
                         status: 'PUBLISH',
                         ...(categoryId && { categories: { append: true, nodes: [{ id: categoryId }] } }),

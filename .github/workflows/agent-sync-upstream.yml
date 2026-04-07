@@ -144,7 +144,7 @@ jobs:
                   }
                 }`,
                 {
-                  title: `Changelog: WordPress ${current}`,
+                  title: `WordPress ${current}`,
                   content,
                   status: 'PUBLISH',
                   ...(categoryId && { categories: { append: true, nodes: [{ id: categoryId }] } }),

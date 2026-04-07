@@ -164,7 +164,7 @@ jobs:
                   }
                 }`,
                 {
-                  title: `Landed: ${pr.title}`,
+                  title: pr.title,
                   content: postContent,
                   status: 'PUBLISH',
                   ...(categoryId && { categories: { append: true, nodes: [{ id: categoryId }] } }),

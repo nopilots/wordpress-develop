@@ -105,7 +105,7 @@ jobs:
                       }
                     }`,
                     {
-                      title: `Aborted: ${pr.title}`,
+                      title: pr.title,
                       content: `<p><a href="${pr.html_url}">PR #${pr.number}</a> was closed after ${revisionCount} revision attempts. The approach needs rethinking.</p>\n<h2>Review Feedback</h2>\n<p>${review.body || 'No details.'}</p>`,
                       status: 'PUBLISH',
                       ...(categoryId && { categories: { append: true, nodes: [{ id: categoryId }] } }),
