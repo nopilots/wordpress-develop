@@ -94,35 +94,35 @@ jobs:
 
               // 3. Check required author accounts exist
               const requiredAuthors = ['autopilot', 'pat', 'doc', 'dalton'];
-              for (const author of requiredAuthors) {
-                try {
-                  const url = `${wpUrl}/wp-json/wp/v2/users?slug=${author}&context=edit`;
-                  core.info(`Checking author "${author}"...`);
-                  const authorRes = await fetch(url, {
-                    headers: {
-                      'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
-                    },
-                    redirect: 'follow',
-                  });
-                  core.info(`  → HTTP ${authorRes.status} (${authorRes.url})`);
-                  const text = await authorRes.text();
-                  if (authorRes.ok) {
-                    try {
-                      const users = JSON.parse(text);
-                      if (Array.isArray(users) && users.length > 0) {
+              try {
+                const authorsRes = await fetch(`${wpUrl}/graphql`, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    query: `{ users(where: { roleIn: [AUTHOR, ADMINISTRATOR] }, first: 50) { nodes { slug } } }`,
+                  }),
+                });
+                if (authorsRes.ok) {
+                  const authorsData = await authorsRes.json();
+                  if (authorsData.errors) {
+                    failures.push(`Author check error: ${authorsData.errors[0].message}`);
+                  } else {
+                    const slugs = authorsData.data?.users?.nodes?.map(u => u.slug) || [];
+                    core.info(`WordPress users found: ${slugs.join(', ')}`);
+                    for (const author of requiredAuthors) {
+                      if (slugs.includes(author)) {
                         core.info(`Author "${author}": OK`);
                       } else {
                         failures.push(`Author "${author}" not found in WordPress.`);
                       }
-                    } catch (parseErr) {
-                      failures.push(`Author "${author}": response is not JSON — ${text.substring(0, 100)}`);
                     }
-                  } else {
-                    failures.push(`Author "${author}": HTTP ${authorRes.status} — ${text.substring(0, 200)}`);
                   }
-                } catch (e) {
-                  failures.push(`Author "${author}" check failed: ${e.message}`);
                 }
+              } catch (e) {
+                failures.push(`Author check failed: ${e.message}`);
               }
 
               // 4. Create and delete a draft post to verify write access
