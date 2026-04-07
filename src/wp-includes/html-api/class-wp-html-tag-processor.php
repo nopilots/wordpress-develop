@@ -3718,7 +3718,7 @@ class WP_HTML_Tag_Processor {
 		 * namespace check below already correctly strips NULL bytes inside integration
 		 * points when parsing via WP_HTML_Processor.
 		 *
-		 * @see WP_HTML_Processor::__construct() for the push handler that manages namespace transitions.
+		 * @see WP_HTML_Processor where the stack-of-open-elements push handler calls change_parsing_namespace().
 		 * @see https://html.spec.whatwg.org/#mathml-text-integration-point
 		 * @see https://html.spec.whatwg.org/#html-integration-point
 		 */
