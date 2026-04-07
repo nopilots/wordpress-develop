@@ -81,7 +81,7 @@ runs:
           const authorSlug = process.env.AUTHOR_SLUG;
           if (authorSlug) {
             try {
-              const authorRes = await fetch(`${wpUrl}/wp-json/wp/v2/users?slug=${authorSlug}`, {
+              const authorRes = await fetch(`${wpUrl}/wp-json/wp/v2/users?slug=${authorSlug}&context=edit`, {
                 headers: {
                   'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
                 },

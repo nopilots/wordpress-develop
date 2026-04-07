@@ -96,7 +96,7 @@ jobs:
               const requiredAuthors = ['autopilot', 'pat', 'doc', 'dalton'];
               for (const author of requiredAuthors) {
                 try {
-                  const url = `${wpUrl}/wp-json/wp/v2/users?slug=${author}`;
+                  const url = `${wpUrl}/wp-json/wp/v2/users?slug=${author}&context=edit`;
                   core.info(`Checking author "${author}"...`);
                   const authorRes = await fetch(url, {
                     headers: {
