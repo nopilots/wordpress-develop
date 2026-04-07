@@ -44,7 +44,7 @@ jobs:
 
             // Auto-close stale reflection issues >7 days old
             for (const issue of existing) {
-              if (Date.now() - new Date(issue.updated_at) > 7 * 24 * 60 * 60 * 1000) {
+              if (Date.now() - new Date(issue.updated_at) > 24 * 60 * 60 * 1000) {
                 await github.rest.issues.update({
                   owner, repo, issue_number: issue.number,
                   state: 'closed', state_reason: 'not_planned',
@@ -54,7 +54,7 @@ jobs:
             }
 
             const stillOpen = existing.filter(i =>
-              Date.now() - new Date(i.updated_at) <= 7 * 24 * 60 * 60 * 1000
+              Date.now() - new Date(i.updated_at) <= 24 * 60 * 60 * 1000
             );
             if (stillOpen.length > 0) {
               core.info('Reflection issue already open.');
@@ -62,7 +62,7 @@ jobs:
             }
 
             // Gather data from the past week
-            const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+            const oneWeekAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
             // Merged PRs
             const { data: closedPRs } = await github.rest.pulls.list({
