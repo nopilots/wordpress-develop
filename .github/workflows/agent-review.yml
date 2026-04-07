@@ -50,6 +50,40 @@ jobs:
           app-id: ${{ secrets.PAT_APP_ID }}
           private-key: ${{ secrets.PAT_PRIVATE_KEY }}
 
+      - name: Remove human assignees from PR
+        uses: actions/github-script@v7
+        env:
+          PAT_TOKEN: ${{ steps.pat-token.outputs.token }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const prNumber = context.payload.pull_request?.number
+              || parseInt(context.payload.inputs?.pr_number);
+            if (!prNumber) return;
+
+            const { data: pr } = await github.rest.issues.get({
+              owner, repo, issue_number: prNumber,
+            });
+
+            // Remove any non-bot assignees (human users added by coding agent PAT)
+            const humans = pr.assignees
+              .filter(a => a.type === 'User')
+              .map(a => a.login);
+
+            if (humans.length > 0) {
+              await fetch(`https://api.github.com/repos/${owner}/${repo}/issues/${prNumber}/assignees`, {
+                method: 'DELETE',
+                headers: {
+                  'Authorization': `Bearer ${process.env.PAT_TOKEN}`,
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/vnd.github+json',
+                },
+                body: JSON.stringify({ assignees: humans }),
+              });
+              core.info(`Removed human assignees from PR #${prNumber}: ${humans.join(', ')}`);
+            }
+
       - name: Run persona reviews
         uses: actions/github-script@v7
         env:

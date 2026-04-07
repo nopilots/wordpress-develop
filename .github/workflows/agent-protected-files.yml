@@ -53,8 +53,7 @@ jobs:
 
               // Non-agent workflows
               if (file.filename.startsWith('.github/workflows/') &&
-                  !file.filename.includes('agent-') &&
-                  !file.filename.includes('copilot-setup-steps')) {
+                  !file.filename.includes('agent-')) {
                 violations.push(file.filename);
               }
             }
