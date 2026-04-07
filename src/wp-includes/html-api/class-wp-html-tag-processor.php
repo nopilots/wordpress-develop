@@ -3721,9 +3721,18 @@ class WP_HTML_Tag_Processor {
 		 * for security reasons (to avoid joining together strings that were safe
 		 * when separated, but not when joined).
 		 *
-		 * @todo Inside HTML integration points and MathML integration points, the
-		 *       text is processed according to the insertion mode, not according
-		 *       to the foreign content rules. This should strip the NULL bytes.
+		 * Inside MathML text integration points (mi, mo, mn, ms, mtext) and HTML
+		 * integration points (SVG foreignObject, desc, title; MathML annotation-xml
+		 * with encoding="text/html" or "application/xhtml+xml"), text is processed
+		 * according to the HTML insertion mode rather than foreign content rules.
+		 * The WP_HTML_Processor handles this by calling change_parsing_namespace( 'html' )
+		 * when those elements are pushed onto the stack of open elements, so the
+		 * namespace check below already correctly strips NULL bytes inside integration
+		 * points when parsing via WP_HTML_Processor.
+		 *
+		 * @see WP_HTML_Processor where the stack-of-open-elements push handler calls change_parsing_namespace().
+		 * @see https://html.spec.whatwg.org/#mathml-text-integration-point
+		 * @see https://html.spec.whatwg.org/#html-integration-point
 		 */
 		return ( '#text' === $tag_name && 'html' === $this->get_namespace() )
 			? str_replace( "\x00", '', $decoded )
