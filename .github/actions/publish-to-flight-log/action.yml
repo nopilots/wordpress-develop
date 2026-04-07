@@ -81,11 +81,11 @@ runs:
           const authorSlug = process.env.AUTHOR_SLUG;
           if (authorSlug) {
             try {
-              const authorResult = await wpGraphQL(
-                `query($slug: String!) { user(id: $slug, idType: SLUG) { id } }`,
-                { slug: authorSlug }
+              const usersResult = await wpGraphQL(
+                `{ users(first: 50) { nodes { slug id } } }`
               );
-              authorId = authorResult.user?.id || null;
+              const match = usersResult.users?.nodes?.find(u => u.slug === authorSlug);
+              authorId = match?.id || null;
               if (authorId) {
                 core.info(`Author: ${authorSlug}`);
               } else {
