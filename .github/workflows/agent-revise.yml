@@ -126,6 +126,7 @@ jobs:
           title: ${{ env.FLIGHT_LOG_TITLE }}
           content: ${{ env.FLIGHT_LOG_CONTENT }}
           category-slug: course-correction
+          author-slug: pat
           refine-prompt: 'Review and refine this Course Correction post about an abandoned PR. Keep it brief — what was attempted, why it was aborted.'
           wp-url: ${{ secrets.WP_URL }}
           wp-auth: ${{ secrets.WP_AUTH }}

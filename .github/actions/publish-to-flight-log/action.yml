@@ -23,6 +23,10 @@ inputs:
   github-token:
     description: GitHub token for Models API access
     required: true
+  author-slug:
+    description: WordPress author username (e.g., pat, doc, dalton, autopilot)
+    required: false
+    default: ''
 
 outputs:
   post-id:
@@ -46,6 +50,7 @@ runs:
         POST_CONTENT: ${{ inputs.content }}
         CATEGORY_SLUG: ${{ inputs.category-slug }}
         REFINE_PROMPT: ${{ inputs.refine-prompt }}
+        AUTHOR_SLUG: ${{ inputs.author-slug }}
       with:
         script: |
           const wpUrl = process.env.WP_URL;
@@ -71,6 +76,26 @@ runs:
             return json.data;
           };
 
+          // Find author
+          let authorId = null;
+          const authorSlug = process.env.AUTHOR_SLUG;
+          if (authorSlug) {
+            try {
+              const authorResult = await wpGraphQL(
+                `query($slug: String!) { user(id: $slug, idType: SLUG) { id } }`,
+                { slug: authorSlug }
+              );
+              authorId = authorResult.user?.id || null;
+              if (authorId) {
+                core.info(`Author: ${authorSlug}`);
+              } else {
+                core.warning(`Author "${authorSlug}" not found — publishing as default user.`);
+              }
+            } catch (e) {
+              core.warning(`Author lookup failed: ${e.message}`);
+            }
+          }
+
           // Find category
           const slug = process.env.CATEGORY_SLUG;
           const catResult = await wpGraphQL(
@@ -82,8 +107,8 @@ runs:
 
           // Publish
           const data = await wpGraphQL(
-            `mutation CreatePost($title: String!, $content: String!, $status: PostStatusEnum!, $categories: PostCategoriesInput) {
-              createPost(input: { title: $title, content: $content, status: $status, categories: $categories }) {
+            `mutation CreatePost($title: String!, $content: String!, $status: PostStatusEnum!, $categories: PostCategoriesInput, $authorId: ID) {
+              createPost(input: { title: $title, content: $content, status: $status, categories: $categories, authorId: $authorId }) {
                 post { id uri link }
               }
             }`,
@@ -92,6 +117,7 @@ runs:
               content: process.env.POST_CONTENT,
               status: 'PUBLISH',
               ...(categoryId && { categories: { append: true, nodes: [{ id: categoryId }] } }),
+              ...(authorId && { authorId }),
             }
           );
 

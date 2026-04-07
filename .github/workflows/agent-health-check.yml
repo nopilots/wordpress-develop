@@ -92,7 +92,35 @@ jobs:
                 failures.push(`Category check failed: ${e.message}`);
               }
 
-              // 3. Create and delete a draft post to verify write access
+              // 3. Check required author accounts exist
+              const requiredAuthors = ['autopilot', 'pat', 'doc', 'dalton'];
+              try {
+                for (const author of requiredAuthors) {
+                  const authorRes = await fetch(`${wpUrl}/graphql`, {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      query: `query($slug: String!) { user(id: $slug, idType: SLUG) { id } }`,
+                      variables: { slug: author },
+                    }),
+                  });
+                  if (authorRes.ok) {
+                    const authorData = await authorRes.json();
+                    if (authorData.data?.user?.id) {
+                      core.info(`Author "${author}": OK`);
+                    } else {
+                      failures.push(`Author "${author}" not found in WordPress.`);
+                    }
+                  }
+                }
+              } catch (e) {
+                failures.push(`Author check failed: ${e.message}`);
+              }
+
+              // 4. Create and delete a draft post to verify write access
               try {
                 const createRes = await fetch(`${wpUrl}/graphql`, {
                   method: 'POST',

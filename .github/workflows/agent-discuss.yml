@@ -254,6 +254,7 @@ jobs:
           title: ${{ env.FLIGHT_LOG_TITLE }}
           content: ${{ env.FLIGHT_LOG_CONTENT }}
           category-slug: crew-briefing
+          author-slug: pat
           refine-prompt: 'Review and refine this Crew Briefing post about a governance decision. Keep it concise — the decision and key context only.'
           wp-url: ${{ secrets.WP_URL }}
           wp-auth: ${{ secrets.WP_AUTH }}

@@ -111,6 +111,7 @@ jobs:
           title: ${{ env.FLIGHT_LOG_TITLE }}
           content: ${{ env.FLIGHT_LOG_CONTENT }}
           category-slug: changelog
+          author-slug: autopilot
           refine-prompt: 'Review and refine this Changelog post about a WordPress version sync. Keep it brief.'
           wp-url: ${{ secrets.WP_URL }}
           wp-auth: ${{ secrets.WP_AUTH }}
