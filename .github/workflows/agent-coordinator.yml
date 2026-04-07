@@ -33,7 +33,8 @@ jobs:
       - name: Assign ready issues to agents
         uses: actions/github-script@v7
         env:
-          COPILOT_PAT: ${{ steps.app-token.outputs.token }}
+          COPILOT_PAT: ${{ secrets.COPILOT_PAT }}
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
         with:
           script: |
             const owner = context.repo.owner;
@@ -76,30 +77,34 @@ jobs:
               return;
             }
 
-            // Use app token for Copilot assignment
-            const pat = process.env.COPILOT_PAT;
-            if (!pat) {
-              const { data: patIssues } = await github.rest.issues.listForRepo({
+            // COPILOT_PAT for reading bot actors (app tokens can't see Copilot bots)
+            const copilotPat = process.env.COPILOT_PAT;
+            // App token for mutations (avoids attaching PAT owner as assignee)
+            const appToken = process.env.APP_TOKEN;
+
+            if (!copilotPat || !appToken) {
+              const missing = !copilotPat ? 'COPILOT_PAT' : 'APP_TOKEN (PAT_APP_ID/PAT_PRIVATE_KEY)';
+              const { data: alertIssues } = await github.rest.issues.listForRepo({
                 owner, repo, state: 'open', per_page: 50,
               });
-              const hasAlert = patIssues.some(i => i.title.includes('[CRITICAL] App token'));
+              const hasAlert = alertIssues.some(i => i.title.includes('[CRITICAL] Token missing'));
               if (!hasAlert) {
                 await github.rest.issues.create({
                   owner, repo,
-                  title: '[CRITICAL] App token missing — cannot assign agents',
-                  body: 'The coordinator cannot assign agents because the GitHub App token was not generated. Verify `PAT_APP_ID` and `PAT_PRIVATE_KEY` secrets are set and the nopilots-pat app is installed.',
+                  title: '[CRITICAL] Token missing — cannot assign agents',
+                  body: `The coordinator cannot assign agents because \`${missing}\` is not set. A maintainer must fix the repository secrets.`,
                   labels: ['safety:halt'],
                 });
               }
-              core.setFailed('App token not set.');
+              core.setFailed(`${missing} not set.`);
               return;
             }
 
-            const graphql = async (query) => {
+            const makeGraphql = (token) => async (query) => {
               const res = await fetch('https://api.github.com/graphql', {
                 method: 'POST',
                 headers: {
-                  'Authorization': `Bearer ${pat}`,
+                  'Authorization': `Bearer ${token}`,
                   'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({ query }),
@@ -107,8 +112,13 @@ jobs:
               return res.json();
             };
 
+            // Use COPILOT_PAT for reads (can see Copilot bots)
+            const readGraphql = makeGraphql(copilotPat);
+            // Use app token for writes (bot identity, no human assignee)
+            const writeGraphql = makeGraphql(appToken);
+
             // Find copilot-swe-agent ID
-            const actorsResult = await graphql(`{
+            const actorsResult = await readGraphql(`{
               repository(owner: "${owner}", name: "${repo}") {
                 suggestedActors(first: 100, capabilities: CAN_BE_ASSIGNED) {
                   nodes {
@@ -123,16 +133,16 @@ jobs:
               const { data: patIssues } = await github.rest.issues.listForRepo({
                 owner, repo, state: 'open', per_page: 50,
               });
-              const hasAlert = patIssues.some(i => i.title.includes('[CRITICAL] App token'));
+              const hasAlert = patIssues.some(i => i.title.includes('[CRITICAL] COPILOT_PAT'));
               if (!hasAlert) {
                 await github.rest.issues.create({
                   owner, repo,
-                  title: '[CRITICAL] App token auth failed — cannot assign agents',
-                  body: 'The coordinator received an authentication error from the GitHub API. Verify the nopilots-pat app has `issues: write` permission and is installed on this repository.',
+                  title: '[CRITICAL] COPILOT_PAT expired or invalid',
+                  body: 'The coordinator received an authentication error from the GitHub API. The `COPILOT_PAT` secret needs to be rotated.',
                   labels: ['safety:halt'],
                 });
               }
-              core.setFailed('App token authentication failed.');
+              core.setFailed('COPILOT_PAT authentication failed.');
               return;
             }
 
@@ -158,10 +168,10 @@ jobs:
 
             core.info(`Found copilot-swe-agent: ${copilot.id}`);
 
-            // Assign up to 3 issues
+            // Assign up to 3 issues (using app token for mutations)
             for (const issue of unassigned.slice(0, 3)) {
               try {
-                const issueResult = await graphql(`{
+                const issueResult = await readGraphql(`{
                   repository(owner: "${owner}", name: "${repo}") {
                     issue(number: ${issue.number}) {
                       id
@@ -184,7 +194,7 @@ jobs:
 
                 const actorIds = JSON.stringify([copilot.id, ...currentAssignees]);
 
-                const assignResult = await graphql(`
+                const assignResult = await writeGraphql(`
                   mutation {
                     replaceActorsForAssignable(input: {
                       assignableId: "${issueData.id}",
