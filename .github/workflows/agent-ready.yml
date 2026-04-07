@@ -19,8 +19,17 @@ jobs:
   convert-drafts:
     runs-on: ubuntu-latest
     steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.PAT_APP_ID }}
+          private-key: ${{ secrets.PAT_PRIVATE_KEY }}
+
       - name: Mark completed agent drafts as ready
         uses: actions/github-script@v7
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
         with:
           script: |
             const owner = context.repo.owner;
@@ -65,13 +74,24 @@ jobs:
               }
 
               try {
-                await github.graphql(`
-                  mutation($id: ID!) {
-                    markPullRequestReadyForReview(input: { pullRequestId: $id }) {
-                      pullRequest { number }
-                    }
-                  }
-                `, { id: pr.node_id });
+                const appToken = process.env.APP_TOKEN;
+                const res = await fetch('https://api.github.com/graphql', {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${appToken}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    query: `mutation($id: ID!) {
+                      markPullRequestReadyForReview(input: { pullRequestId: $id }) {
+                        pullRequest { number }
+                      }
+                    }`,
+                    variables: { id: pr.node_id },
+                  }),
+                });
+                const result = await res.json();
+                if (result.errors) throw new Error(result.errors[0].message);
 
                 core.info(`Marked PR #${pr.number} as ready for review.`);
               } catch (e) {
