@@ -94,9 +94,11 @@ jobs:
 
               // 3. Check required author accounts exist
               const requiredAuthors = ['autopilot', 'pat', 'doc', 'dalton'];
-              try {
-                for (const author of requiredAuthors) {
-                  const authorRes = await fetch(`${wpUrl}/wp-json/wp/v2/users?slug=${author}`, {
+              for (const author of requiredAuthors) {
+                try {
+                  const url = `${wpUrl}/wp-json/wp/v2/users?slug=${author}`;
+                  core.info(`Checking author "${author}" at ${url}...`);
+                  const authorRes = await fetch(url, {
                     headers: {
                       'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
                     },
@@ -109,11 +111,12 @@ jobs:
                       failures.push(`Author "${author}" not found in WordPress.`);
                     }
                   } else {
-                    failures.push(`Author check for "${author}" failed: HTTP ${authorRes.status}`);
+                    const text = await authorRes.text();
+                    failures.push(`Author "${author}": HTTP ${authorRes.status} — ${text.substring(0, 200)}`);
                   }
+                } catch (e) {
+                  failures.push(`Author "${author}" check failed: ${e.message}`);
                 }
-              } catch (e) {
-                failures.push(`Author check failed: ${e.message}`);
               }
 
               // 4. Create and delete a draft post to verify write access
