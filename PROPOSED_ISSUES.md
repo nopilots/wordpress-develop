@@ -80,20 +80,20 @@ The `WP_HTML_Decoder` class (463 lines) has relatively limited test coverage (14
 
 ### Problem
 
-The `WP_Admin_Bar` class has multiple methods with incomplete PHPDoc. Parameter types are specified but descriptions are missing, reducing IDE support and developer documentation quality.
+The `WP_Admin_Bar` class has multiple methods with incomplete PHPDoc. Parameter types and names are specified but descriptions are missing. For example, the PHPDoc currently contains entries like `@param array $args` or `@param string $id` without the description text that should follow the parameter name. This reduces IDE support and developer documentation quality.
 
 ### Files Involved
 
-- `src/wp-includes/class-wp-admin-bar.php` - Lines with missing @param descriptions:
-  - Line 184: `add_menu()` - `$args` parameter
-  - Line 195: `remove_menu()` - `$id` parameter
-  - Line 209: `add_node()` - `$args` parameter
-  - Line 293: `_unset_node()` - `$id` parameter
-  - Line 460: `_bind()` - Multiple parameters need descriptions
-  - Line 492: `_render_container()` - `$nodes` parameter
-  - Line 510: `_render_group()` - `$nodes` parameter
-  - Line 542: `_render_item()` - `$node` parameter
-  - Line 638: `recursive_render()` - `$id` and `$node` parameters
+- `src/wp-includes/class-wp-admin-bar.php` - Lines with missing PHPDoc @param descriptions (type and name specified, but description text missing):
+  - Line 184: `add_menu()` - `@param array $args` needs description
+  - Line 195: `remove_menu()` - `@param string $id` needs description
+  - Line 209: `add_node()` - `@param array $args` needs description
+  - Line 293: `_unset_node()` - `@param string $id` needs description
+  - Line 460: `_bind()` - Multiple `@param` entries need descriptions
+  - Line 492: `_render_container()` - `@param array $nodes` needs description
+  - Line 510: `_render_group()` - `@param object $nodes` needs description
+  - Line 542: `_render_item()` - `@param object $node` needs description
+  - Line 638: `recursive_render()` - `@param string $id` and `@param object $node` need descriptions
 
 ### What Tests Should Cover
 
