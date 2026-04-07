@@ -53,7 +53,8 @@ jobs:
               pr.draft && (
                 pr.head.ref.startsWith('copilot/') ||
                 pr.head.ref.startsWith('agent/') ||
-                pr.head.ref.startsWith('claude/')
+                pr.head.ref.startsWith('claude/') ||
+                pr.head.ref.startsWith('codex/')
               )
             );
 

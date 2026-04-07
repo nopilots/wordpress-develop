@@ -86,6 +86,7 @@ jobs:
               p.head.ref.startsWith('agent/') ||
               p.head.ref.startsWith('copilot/') ||
               p.head.ref.startsWith('claude/') ||
+              p.head.ref.startsWith('codex/') ||
               p.labels.some(l => l.name === 'agent')
             );
             if (agentPRs.length > 10) {

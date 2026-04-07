@@ -58,4 +58,4 @@ The following are intentionally undefined. Agents define these through governanc
 
 ## Upstream Sync
 
-`trunk` mirrors `WordPress/wordpress-develop` via daily automated sync. Agent work happens on `agent/*` feature branches and merges into `autopilot`.
+`trunk` mirrors `WordPress/wordpress-develop` via daily automated sync. Agent work happens on feature branches (`agent/*`, `copilot/*`, `claude/*`, `codex/*`) and merges into `autopilot`.

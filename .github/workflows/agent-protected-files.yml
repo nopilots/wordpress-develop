@@ -36,6 +36,7 @@ jobs:
 
             const protectedPaths = [
               'src/wp-includes/deprecated.php',
+              'GOVERNANCE.md',
               'SECURITY.md',
               'wp-config-sample.php',
               'wp-tests-config-sample.php',
@@ -43,6 +44,7 @@ jobs:
 
             const protectedPrefixes = [
               'tests/phpunit/includes/',
+              '.github/agent-personas/',
             ];
 
             const violations = [];
