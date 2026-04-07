@@ -2818,7 +2818,7 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 
 				$this->reconstruct_active_formatting_elements();
 				$this->insert_html_element( $this->state->current_token );
-				$this->state->active_formatting_elements->push( $this->state->current_token );
+				$this->push_active_formatting_element( $this->state->current_token );
 				return true;
 
 			/*
@@ -2839,7 +2839,7 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 			case '+U':
 				$this->reconstruct_active_formatting_elements();
 				$this->insert_html_element( $this->state->current_token );
-				$this->state->active_formatting_elements->push( $this->state->current_token );
+				$this->push_active_formatting_element( $this->state->current_token );
 				return true;
 
 			/*
@@ -2855,7 +2855,7 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 				}
 
 				$this->insert_html_element( $this->state->current_token );
-				$this->state->active_formatting_elements->push( $this->state->current_token );
+				$this->push_active_formatting_element( $this->state->current_token );
 				return true;
 
 			/*
@@ -6319,6 +6319,38 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 	 */
 	private function insert_html_element( WP_HTML_Token $token ): void {
 		$this->state->stack_of_open_elements->push( $token );
+	}
+
+	/**
+	 * Pushes a formatting element onto the list of active formatting elements.
+	 *
+	 * Before pushing, this method collects the token's parsed attributes and stores
+	 * them on the token as `comparable_attributes` (a sorted attribute name/value
+	 * array). The active formatting elements list uses this to enforce the
+	 * "Noah's Ark clause": at most three of any equivalent formatting element may
+	 * exist between any two markers (or from the start of the list if there are none).
+	 *
+	 * @since 6.8.0
+	 * @ignore
+	 *
+	 * @see https://html.spec.whatwg.org/#push-onto-the-list-of-active-formatting-elements
+	 * @see WP_HTML_Active_Formatting_Elements::push()
+	 *
+	 * @param WP_HTML_Token $token Push this token onto the list of active formatting elements.
+	 */
+	private function push_active_formatting_element( WP_HTML_Token $token ): void {
+		$attribute_names = $this->get_attribute_names_with_prefix( '' );
+		$attributes      = array();
+
+		if ( is_array( $attribute_names ) ) {
+			foreach ( $attribute_names as $attribute_name ) {
+				$attributes[ $attribute_name ] = $this->get_attribute( $attribute_name );
+			}
+			ksort( $attributes );
+		}
+
+		$token->comparable_attributes = $attributes;
+		$this->state->active_formatting_elements->push( $token );
 	}
 
 	/**
