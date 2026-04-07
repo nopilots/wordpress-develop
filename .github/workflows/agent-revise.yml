@@ -96,8 +96,8 @@ jobs:
                 }
 
                 try {
-                  const categoryId = await findCategory('failed-approaches');
-                  if (!categoryId) core.warning('Category "failed-approaches" not found — publishing without category.');
+                  const categoryId = await findCategory('course-correction');
+                  if (!categoryId) core.warning('Category "course-correction" not found — publishing without category.');
                   const data = await wpGraphQL(
                     `mutation CreatePost($title: String!, $content: String!, $status: PostStatusEnum!, $categories: PostCategoriesInput) {
                       createPost(input: { title: $title, content: $content, status: $status, categories: $categories }) {
@@ -105,7 +105,7 @@ jobs:
                       }
                     }`,
                     {
-                      title: `Closed: ${pr.title}`,
+                      title: `Aborted: ${pr.title}`,
                       content: `<p><a href="${pr.html_url}">PR #${pr.number}</a> was closed after ${revisionCount} revision attempts. The approach needs rethinking.</p>\n<h2>Review Feedback</h2>\n<p>${review.body || 'No details.'}</p>`,
                       status: 'PUBLISH',
                       ...(categoryId && { categories: { append: true, nodes: [{ id: categoryId }] } }),

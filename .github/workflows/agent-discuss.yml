@@ -268,8 +268,8 @@ jobs:
                   }
 
                   try {
-                    const categoryId = await findCategory('governance-decisions');
-                    if (!categoryId) core.warning('Category "governance-decisions" not found — publishing without category.');
+                    const categoryId = await findCategory('crew-briefing');
+                    if (!categoryId) core.warning('Category "crew-briefing" not found — publishing without category.');
                     const decisionContent = [
                       `<h2>Decision</h2>`,
                       `<p>${reply}</p>`,
@@ -285,7 +285,7 @@ jobs:
                         }
                       }`,
                       {
-                        title: `Decision: ${discussion.title}`,
+                        title: `Crew Briefing: ${discussion.title}`,
                         content: decisionContent,
                         status: 'PUBLISH',
                         ...(categoryId && { categories: { append: true, nodes: [{ id: categoryId }] } }),

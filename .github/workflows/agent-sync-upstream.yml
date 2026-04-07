@@ -128,8 +128,8 @@ jobs:
             const previous = process.env.PREVIOUS_VERSION;
 
             try {
-              const categoryId = await findCategory('release-notes');
-              if (!categoryId) core.warning('Category "release-notes" not found — publishing without category.');
+              const categoryId = await findCategory('changelog');
+              if (!categoryId) core.warning('Category "changelog" not found — publishing without category.');
               const repoUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}`;
               const content = [
                 `<p>WordPress has been updated from <code>${previous}</code> to <code>${current}</code> via upstream sync.</p>`,
@@ -144,7 +144,7 @@ jobs:
                   }
                 }`,
                 {
-                  title: `WordPress ${current} synced to autopilot`,
+                  title: `Changelog: WordPress ${current}`,
                   content,
                   status: 'PUBLISH',
                   ...(categoryId && { categories: { append: true, nodes: [{ id: categoryId }] } }),

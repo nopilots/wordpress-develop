@@ -145,8 +145,8 @@ jobs:
             }
 
             try {
-              const categoryId = await findCategory('merged-work');
-              if (!categoryId) core.warning('Category "merged-work" not found — publishing without category.');
+              const categoryId = await findCategory('flight-log');
+              if (!categoryId) core.warning('Category "flight-log" not found — publishing without category.');
               const data = await wpGraphQL(
                 `mutation CreatePost($title: String!, $content: String!, $status: PostStatusEnum!, $categories: PostCategoriesInput) {
                   createPost(input: { title: $title, content: $content, status: $status, categories: $categories }) {
@@ -154,7 +154,7 @@ jobs:
                   }
                 }`,
                 {
-                  title: `Merged: ${pr.title}`,
+                  title: `Landed: ${pr.title}`,
                   content: postContent,
                   status: 'PUBLISH',
                   ...(categoryId && { categories: { append: true, nodes: [{ id: categoryId }] } }),

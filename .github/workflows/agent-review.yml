@@ -321,8 +321,8 @@ jobs:
                 }
 
                 try {
-                  const categoryId = await findCategory('code-review-insights');
-                  if (!categoryId) core.warning('Category "code-review-insights" not found — publishing without category.');
+                  const categoryId = await findCategory('preflight-review');
+                  if (!categoryId) core.warning('Category "preflight-review" not found — publishing without category.');
                   const reviewContent = [
                     `<h2><a href="${pr.html_url}">PR #${prNumber}</a>: ${pr.title}</h2>`,
                     `<p>${pr.body || 'No description.'}</p>`,
@@ -342,7 +342,7 @@ jobs:
                       }
                     }`,
                     {
-                      title: `Review: ${pr.title}`,
+                      title: `Preflight: ${pr.title}`,
                       content: reviewContent,
                       status: 'PUBLISH',
                       ...(categoryId && { categories: { append: true, nodes: [{ id: categoryId }] } }),
