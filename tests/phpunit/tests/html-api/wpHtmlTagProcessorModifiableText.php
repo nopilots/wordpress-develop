@@ -666,6 +666,75 @@ HTML;
 	}
 
 	/**
+	 * When setting multiline text on a TEXTAREA element, the content should be prefixed
+	 * with a newline for aesthetics. Since TEXTAREA ignores the first newline in its
+	 * content, the decoded value of `get_modifiable_text()` is unchanged.
+	 */
+	public function test_set_modifiable_text_prefixes_multiline_textarea_for_aesthetics(): void {
+		$processor = new WP_HTML_Tag_Processor( '<textarea></textarea>' );
+		$processor->next_token();
+		$processor->set_modifiable_text( "first line\nsecond line" );
+
+		$this->assertSame(
+			"first line\nsecond line",
+			$processor->get_modifiable_text(),
+			'Should have returned the originally-set text value, without the aesthetic newline prefix.'
+		);
+
+		$this->assertSame(
+			"<textarea>\nfirst line\nsecond line</textarea>",
+			$processor->get_updated_html(),
+			'Should have prefixed multiline TEXTAREA content with a newline in the HTML source.'
+		);
+	}
+
+	/**
+	 * When setting multiline text on a TEXTAREA element that already starts with a newline,
+	 * no additional aesthetic newline prefix should be added beyond what the
+	 * leading-newline-preservation logic already adds.
+	 */
+	public function test_set_modifiable_text_textarea_starting_with_newline_is_not_double_prefixed(): void {
+		$processor = new WP_HTML_Tag_Processor( '<textarea></textarea>' );
+		$processor->next_token();
+		$processor->set_modifiable_text( "\nfirst line\nsecond line" );
+
+		$this->assertSame(
+			"\nfirst line\nsecond line",
+			$processor->get_modifiable_text(),
+			'Should have preserved the leading newline in the decoded content.'
+		);
+
+		$this->assertSame(
+			"<textarea>\n\nfirst line\nsecond line</textarea>",
+			$processor->get_updated_html(),
+			'Should have added exactly one extra newline prefix (for leading-newline-preservation), not an extra aesthetic one.'
+		);
+	}
+
+	/**
+	 * When setting multiline text on a TITLE element, no aesthetic newline prefix should
+	 * be added, as TITLE does not ignore the first newline and adding one would change
+	 * the semantic value of the element's content.
+	 */
+	public function test_set_modifiable_text_does_not_prefix_multiline_title_for_aesthetics(): void {
+		$processor = new WP_HTML_Tag_Processor( '<title></title>' );
+		$processor->next_token();
+		$processor->set_modifiable_text( "first line\nsecond line" );
+
+		$this->assertSame(
+			"first line\nsecond line",
+			$processor->get_modifiable_text(),
+			'Should have returned the originally-set text value without any newline prefix.'
+		);
+
+		$this->assertSame(
+			"<title>first line\nsecond line</title>",
+			$processor->get_updated_html(),
+			'Should not have prefixed multiline TITLE content with a newline.'
+		);
+	}
+
+	/**
 	 * Ensures that `set_modifiable_text()` returns false for elements that are
 	 * not special "atomic" elements.
 	 *

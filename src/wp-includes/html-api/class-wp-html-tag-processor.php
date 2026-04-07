@@ -3922,9 +3922,19 @@ class WP_HTML_Tag_Processor {
 				 * safe to leave them escaped and this can prevent other code from
 				 * naively detecting tags within the contents.
 				 *
-				 * @todo It would be useful to prefix a multiline replacement text
-				 *       with a newline, but not necessary. This is for aesthetics.
+				 * Multiline TEXTAREA content is prefixed with a newline for aesthetics,
+				 * so the content starts on a new line in the HTML source. Since HTML
+				 * ignores the first newline after a TEXTAREA opening tag, the decoded
+				 * value is unchanged by the prefix.
 				 */
+				if (
+					'TEXTAREA' === $this->get_tag() &&
+					str_contains( $plaintext_content, "\n" ) &&
+					"\n" !== ( $plaintext_content[0] ?? '' )
+				) {
+					$plaintext_content = "\n{$plaintext_content}";
+				}
+
 				$this->lexical_updates['modifiable text'] = new WP_HTML_Text_Replacement(
 					$this->text_starts_at,
 					$this->text_length,
