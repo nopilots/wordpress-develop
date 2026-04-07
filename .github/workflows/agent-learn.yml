@@ -1,0 +1,160 @@
+name: Agent Learn
+
+on:
+  issues:
+    types: [closed]
+  pull_request_target:
+    types: [closed]
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: read
+  models: read
+
+concurrency:
+  group: agent-learn
+  cancel-in-progress: true
+
+jobs:
+  learn-from-failure:
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issues' &&
+       contains(toJSON(github.event.issue.labels), 'safety:halt')) ||
+      (github.event_name == 'pull_request_target' &&
+       github.event.pull_request.merged == false &&
+       github.event.pull_request.base.ref == 'autopilot')
+    steps:
+      - name: Analyze failure and create preventive issue
+        uses: actions/github-script@v7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // Kill switch
+            const { data: killSwitch } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'system:off', per_page: 1,
+            });
+            if (killSwitch.length > 0) return;
+
+            // Determine what failed
+            let failureContext = '';
+            let failureTitle = '';
+
+            if (context.payload.issue) {
+              const issue = context.payload.issue;
+              if (!issue.labels.some(l => l.name === 'safety:halt')) return;
+              failureContext = `Issue #${issue.number}: ${issue.title}\n\n${issue.body || ''}`;
+              failureTitle = issue.title;
+            } else if (context.payload.pull_request) {
+              const pr = context.payload.pull_request;
+              if (pr.merged) return; // Merged PRs aren't failures
+
+              // Get review comments for context on why it was rejected
+              const { data: reviews } = await github.rest.pulls.listReviews({
+                owner, repo, pull_number: pr.number,
+              });
+              const rejections = reviews
+                .filter(r => r.state === 'CHANGES_REQUESTED' || r.state === 'DISMISSED')
+                .map(r => `${r.user.login}: ${r.body || 'No comment.'}`)
+                .join('\n');
+
+              // Get changed files
+              const { data: files } = await github.rest.pulls.listFiles({
+                owner, repo, pull_number: pr.number, per_page: 50,
+              });
+              const changedFiles = files.map(f => f.filename).join(', ');
+
+              failureContext = `PR #${pr.number}: ${pr.title}\n\nFiles: ${changedFiles}\n\nReview feedback:\n${rejections || 'No reviews.'}`;
+              failureTitle = pr.title;
+            } else if (context.eventName === 'workflow_dispatch') {
+              // Manual trigger — analyze recent failures
+              const { data: recentHalts } = await github.rest.issues.listForRepo({
+                owner, repo, state: 'closed', labels: 'safety:halt', per_page: 5,
+              });
+              const { data: recentClosedPRs } = await github.rest.pulls.list({
+                owner, repo, state: 'closed', base: 'autopilot', per_page: 10,
+              });
+              const unmerged = recentClosedPRs.filter(pr => !pr.merged_at).slice(0, 3);
+
+              if (recentHalts.length === 0 && unmerged.length === 0) {
+                core.info('No recent failures to learn from.');
+                return;
+              }
+
+              failureContext = [
+                '## Recent safety halts',
+                ...recentHalts.map(i => `- #${i.number}: ${i.title}`),
+                '',
+                '## Recently closed PRs (not merged)',
+                ...unmerged.map(pr => `- #${pr.number}: ${pr.title}`),
+              ].join('\n');
+              failureTitle = 'recent failures';
+            }
+
+            if (!failureContext) return;
+
+            // Ask Models API to analyze the failure
+            const analysisRes = await fetch('https://models.github.ai/inference/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${process.env.GITHUB_TOKEN}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                model: 'openai/gpt-4o-mini',
+                messages: [{
+                  role: 'system',
+                  content: 'You are a systems reliability engineer analyzing failures in an autonomous AI-governed WordPress project. Your job is to identify the root cause and propose a specific, actionable preventive measure. Be concise.',
+                }, {
+                  role: 'user',
+                  content: `Analyze this failure and propose ONE specific preventive improvement.\n\nFailure:\n${failureContext.substring(0, 2000)}\n\nRespond with:\nROOT_CAUSE: (one sentence)\nPREVENTION: (one sentence describing the fix)\nTITLE: (short issue title, no prefix)`,
+                }],
+                max_tokens: 300,
+                temperature: 0.3,
+              }),
+            });
+
+            if (!analysisRes.ok) {
+              core.warning('Models API unavailable for failure analysis.');
+              return;
+            }
+
+            const result = await analysisRes.json();
+            const analysis = result.choices?.[0]?.message?.content || '';
+
+            const rootCause = analysis.match(/ROOT_CAUSE:\s*(.+)/)?.[1]?.trim() || 'Unknown';
+            const prevention = analysis.match(/PREVENTION:\s*(.+)/)?.[1]?.trim() || 'Review needed';
+            const title = analysis.match(/TITLE:\s*(.+)/)?.[1]?.trim() || `Review failure: ${failureTitle}`;
+
+            // Check for duplicate
+            const { data: existingIssues } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'agent', per_page: 50,
+            });
+            if (existingIssues.some(i => i.title.toLowerCase() === title.toLowerCase())) {
+              core.info(`Duplicate issue: "${title}". Skipping.`);
+              return;
+            }
+
+            await github.rest.issues.create({
+              owner, repo,
+              title,
+              body: [
+                `A failure was detected and analyzed automatically.`,
+                '',
+                `**Root cause:** ${rootCause}`,
+                `**Prevention:** ${prevention}`,
+                '',
+                `## Original failure`,
+                '',
+                failureContext.substring(0, 1000),
+              ].join('\n'),
+              labels: ['agent', 'status:ready'],
+            });
+
+            core.info(`Created preventive issue: ${title}`);
