@@ -23,18 +23,8 @@ jobs:
       github.event_name == 'schedule' ||
       (github.event.label.name == 'status:ready')
     steps:
-      - name: Generate app token
-        id: app-token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.PAT_APP_ID }}
-          private-key: ${{ secrets.PAT_PRIVATE_KEY }}
-
       - name: Assign ready issues to agents
         uses: actions/github-script@v7
-        env:
-          COPILOT_PAT: ${{ secrets.COPILOT_PAT }}
-          APP_TOKEN: ${{ steps.app-token.outputs.token }}
         with:
           script: |
             const owner = context.repo.owner;
@@ -77,30 +67,10 @@ jobs:
               return;
             }
 
-            // COPILOT_PAT for reading bot actors (app tokens can't see Copilot bots)
-            const copilotPat = process.env.COPILOT_PAT;
-            // App token for mutations (avoids attaching PAT owner as assignee)
-            const appToken = process.env.APP_TOKEN;
+            // Use GITHUB_TOKEN for GraphQL (no personal identity attached)
+            const token = process.env.GITHUB_TOKEN;
 
-            if (!copilotPat || !appToken) {
-              const missing = !copilotPat ? 'COPILOT_PAT' : 'APP_TOKEN (PAT_APP_ID/PAT_PRIVATE_KEY)';
-              const { data: alertIssues } = await github.rest.issues.listForRepo({
-                owner, repo, state: 'open', per_page: 50,
-              });
-              const hasAlert = alertIssues.some(i => i.title.includes('[CRITICAL] Token missing'));
-              if (!hasAlert) {
-                await github.rest.issues.create({
-                  owner, repo,
-                  title: '[CRITICAL] Token missing — cannot assign agents',
-                  body: `The coordinator cannot assign agents because \`${missing}\` is not set. A maintainer must fix the repository secrets.`,
-                  labels: ['safety:halt'],
-                });
-              }
-              core.setFailed(`${missing} not set.`);
-              return;
-            }
-
-            const makeGraphql = (token) => async (query) => {
+            const graphql = async (query) => {
               const res = await fetch('https://api.github.com/graphql', {
                 method: 'POST',
                 headers: {
@@ -112,13 +82,8 @@ jobs:
               return res.json();
             };
 
-            // Use COPILOT_PAT for reads (can see Copilot bots)
-            const readGraphql = makeGraphql(copilotPat);
-            // Use app token for writes (bot identity, no human assignee)
-            const writeGraphql = makeGraphql(appToken);
-
-            // Find copilot-swe-agent ID
-            const actorsResult = await readGraphql(`{
+            // Find assignable coding agent bots (prefer anthropic)
+            const actorsResult = await graphql(`{
               repository(owner: "${owner}", name: "${repo}") {
                 suggestedActors(first: 100, capabilities: CAN_BE_ASSIGNED) {
                   nodes {
@@ -130,48 +95,42 @@ jobs:
 
             // Check for auth failure
             if (actorsResult?.message === 'Bad credentials' || actorsResult?.errors?.[0]?.type === 'FORBIDDEN') {
-              const { data: patIssues } = await github.rest.issues.listForRepo({
-                owner, repo, state: 'open', per_page: 50,
-              });
-              const hasAlert = patIssues.some(i => i.title.includes('[CRITICAL] COPILOT_PAT'));
-              if (!hasAlert) {
-                await github.rest.issues.create({
-                  owner, repo,
-                  title: '[CRITICAL] COPILOT_PAT expired or invalid',
-                  body: 'The coordinator received an authentication error from the GitHub API. The `COPILOT_PAT` secret needs to be rotated.',
-                  labels: ['safety:halt'],
-                });
-              }
-              core.setFailed('COPILOT_PAT authentication failed.');
+              core.setFailed('GraphQL authentication failed.');
               return;
             }
 
             const actors = actorsResult?.data?.repository?.suggestedActors?.nodes || [];
-            const copilot = actors.find(a => a.login === 'copilot-swe-agent');
+            core.info(`Assignable actors: ${actors.map(a => a.login).filter(Boolean).join(', ')}`);
 
-            if (!copilot) {
+            // Priority order: anthropic, openai, copilot
+            const agent =
+              actors.find(a => a.login === 'anthropic-code-agent') ||
+              actors.find(a => a.login === 'openai-code-agent') ||
+              actors.find(a => a.login === 'copilot-swe-agent');
+
+            if (!agent) {
               const { data: botIssues } = await github.rest.issues.listForRepo({
                 owner, repo, state: 'open', per_page: 50,
               });
-              const hasAlert = botIssues.some(i => i.title.includes('[CRITICAL] copilot-swe-agent'));
+              const hasAlert = botIssues.some(i => i.title.includes('[CRITICAL] No coding agent'));
               if (!hasAlert) {
                 await github.rest.issues.create({
                   owner, repo,
-                  title: '[CRITICAL] copilot-swe-agent not available',
-                  body: 'The coordinator cannot find `copilot-swe-agent` as an assignable actor. Verify that GitHub Copilot coding agent is enabled for this repository in the org settings.',
+                  title: '[CRITICAL] No coding agent available',
+                  body: 'The coordinator cannot find any assignable coding agent bot. Verify that coding agents are enabled for this repository in the org settings.',
                   labels: ['safety:halt'],
                 });
               }
-              core.setFailed('copilot-swe-agent not found.');
+              core.setFailed('No coding agent found.');
               return;
             }
 
-            core.info(`Found copilot-swe-agent: ${copilot.id}`);
+            core.info(`Selected agent: ${agent.login} (${agent.id})`);
 
-            // Assign up to 3 issues (using app token for mutations)
+            // Assign up to 3 issues
             for (const issue of unassigned.slice(0, 3)) {
               try {
-                const issueResult = await readGraphql(`{
+                const issueResult = await graphql(`{
                   repository(owner: "${owner}", name: "${repo}") {
                     issue(number: ${issue.number}) {
                       id
@@ -187,14 +146,14 @@ jobs:
                 }
 
                 const currentAssignees = issueData.assignees.nodes.map(a => a.id);
-                if (currentAssignees.includes(copilot.id)) {
-                  core.info(`Issue #${issue.number} already assigned to Copilot.`);
+                if (currentAssignees.includes(agent.id)) {
+                  core.info(`Issue #${issue.number} already assigned to ${agent.login}.`);
                   continue;
                 }
 
-                const actorIds = JSON.stringify([copilot.id, ...currentAssignees]);
+                const actorIds = JSON.stringify([agent.id, ...currentAssignees]);
 
-                const assignResult = await writeGraphql(`
+                const assignResult = await graphql(`
                   mutation {
                     replaceActorsForAssignable(input: {
                       assignableId: "${issueData.id}",
@@ -220,7 +179,7 @@ jobs:
                   name: 'status:ready',
                 }).catch(() => {});
 
-                core.info(`Assigned issue #${issue.number} to copilot-swe-agent.`);
+                core.info(`Assigned issue #${issue.number} to ${agent.login}.`);
               } catch (e) {
                 core.warning(`Error on issue #${issue.number}: ${e.message}`);
               }
