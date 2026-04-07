@@ -156,11 +156,10 @@ jobs:
             try {
               const categoryId = await findCategory('weekly-reflection');
               if (!categoryId) core.warning('Category "weekly-reflection" not found — publishing without category.');
-              const weekOf = new Date().toISOString().split('T')[0];
               const content = [
                 `<h2>Merged this week (${mergedPRs.length})</h2>`,
                 mergedPRs.length
-                  ? `<ul>${mergedPRs.map(pr => `<li><a href="${pr.html_url}">#${pr.number}</a>: ${pr.title} — merged by <strong>${pr.merged_by?.login || 'unknown'}</strong></li>`).join('')}</ul>`
+                  ? `<ul>${mergedPRs.map(pr => `<li><a href="${pr.html_url}">#${pr.number}</a>: ${pr.title}</li>`).join('')}</ul>`
                   : '<p>None.</p>',
                 `<h2>Stale PRs (${stalePRs.length})</h2>`,
                 stalePRs.length
@@ -179,7 +178,7 @@ jobs:
                   }
                 }`,
                 {
-                  title: `Weekly Reflection: ${weekOf}`,
+                  title: `Weekly Reflection`,
                   content,
                   status: 'PUBLISH',
                   ...(categoryId && { categories: { append: true, nodes: [{ id: categoryId }] } }),
