@@ -23,10 +23,17 @@ jobs:
       github.event_name == 'schedule' ||
       (github.event.label.name == 'status:ready')
     steps:
+      - name: Generate app token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.PAT_APP_ID }}
+          private-key: ${{ secrets.PAT_PRIVATE_KEY }}
+
       - name: Assign ready issues to agents
         uses: actions/github-script@v7
         env:
-          COPILOT_PAT: ${{ secrets.COPILOT_PAT }}
+          COPILOT_PAT: ${{ steps.app-token.outputs.token }}
         with:
           script: |
             const owner = context.repo.owner;
@@ -69,22 +76,22 @@ jobs:
               return;
             }
 
-            // Use PAT for Copilot assignment
+            // Use app token for Copilot assignment
             const pat = process.env.COPILOT_PAT;
             if (!pat) {
               const { data: patIssues } = await github.rest.issues.listForRepo({
                 owner, repo, state: 'open', per_page: 50,
               });
-              const hasAlert = patIssues.some(i => i.title.includes('[CRITICAL] COPILOT_PAT'));
+              const hasAlert = patIssues.some(i => i.title.includes('[CRITICAL] App token'));
               if (!hasAlert) {
                 await github.rest.issues.create({
                   owner, repo,
-                  title: '[CRITICAL] COPILOT_PAT secret missing or expired',
-                  body: 'The coordinator cannot assign agents because `COPILOT_PAT` is not set or has expired. A maintainer must create a new fine-grained PAT and add it as a repository secret.',
+                  title: '[CRITICAL] App token missing — cannot assign agents',
+                  body: 'The coordinator cannot assign agents because the GitHub App token was not generated. Verify `PAT_APP_ID` and `PAT_PRIVATE_KEY` secrets are set and the nopilots-pat app is installed.',
                   labels: ['safety:halt'],
                 });
               }
-              core.setFailed('COPILOT_PAT not set.');
+              core.setFailed('App token not set.');
               return;
             }
 
@@ -116,16 +123,16 @@ jobs:
               const { data: patIssues } = await github.rest.issues.listForRepo({
                 owner, repo, state: 'open', per_page: 50,
               });
-              const hasAlert = patIssues.some(i => i.title.includes('[CRITICAL] COPILOT_PAT'));
+              const hasAlert = patIssues.some(i => i.title.includes('[CRITICAL] App token'));
               if (!hasAlert) {
                 await github.rest.issues.create({
                   owner, repo,
-                  title: '[CRITICAL] COPILOT_PAT expired or invalid',
-                  body: 'The coordinator received an authentication error from the GitHub API. The `COPILOT_PAT` secret needs to be rotated.',
+                  title: '[CRITICAL] App token auth failed — cannot assign agents',
+                  body: 'The coordinator received an authentication error from the GitHub API. Verify the nopilots-pat app has `issues: write` permission and is installed on this repository.',
                   labels: ['safety:halt'],
                 });
               }
-              core.setFailed('COPILOT_PAT authentication failed.');
+              core.setFailed('App token authentication failed.');
               return;
             }
 
