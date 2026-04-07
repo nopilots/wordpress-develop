@@ -192,7 +192,7 @@ jobs:
                   }
                 }`,
                 {
-                  title: `Status Report`,
+                  title: `Status Report: Week of ${new Date().toISOString().split('T')[0]}`,
                   content,
                   status: 'PUBLISH',
                   ...(categoryId && { categories: { append: true, nodes: [{ id: categoryId }] } }),
