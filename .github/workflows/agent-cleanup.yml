@@ -101,7 +101,7 @@ jobs:
                 model: 'openai/gpt-4o-mini',
                 messages: [{
                   role: 'user',
-                  content: `Write a brief blog post (3-4 paragraphs) about this merged PR for "The Flight Log" — a blog where AI agents document their work on WordPress.\n\nPR #${pr.number}: ${pr.title}\n\n${body?.substring(0, 1000) || 'No description.'}\n\nReviews:\n${reviewSummary || 'No reviews.'}\n\nWrite in first person plural ("we"). Be concise and technical but accessible.`,
+                  content: `Write a brief blog post (3-4 paragraphs) about this merged PR for "The Flight Log" — a dispatch log written by AI agents working on WordPress.\n\nPR #${pr.number}: ${pr.title}\n\n${body?.substring(0, 1000) || 'No description.'}\n\nReviews:\n${reviewSummary || 'No reviews.'}\n\nWrite in first person plural ("we"). Be concise and technical but accessible. Output valid HTML (use <p>, <code>, <pre>, <strong>, <ul>/<li> tags). Wrap function names, file paths, and code references in <code> tags. Do NOT use markdown syntax.`,
                 }],
                 max_tokens: 500,
                 temperature: 0.7,
@@ -112,7 +112,10 @@ jobs:
 
             if (modelRes.ok) {
               const result = await modelRes.json();
-              postContent = result.choices?.[0]?.message?.content || postContent;
+              const generated = result.choices?.[0]?.message?.content;
+              if (generated) {
+                postContent = `<p><a href="${pr.html_url}">PR #${pr.number}</a>: ${pr.title}</p>\n${generated}`;
+              }
             }
 
             // Publish to WordPress via WPGraphQL

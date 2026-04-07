@@ -323,15 +323,29 @@ jobs:
                 try {
                   const categoryId = await findCategory('preflight-review');
                   if (!categoryId) core.warning('Category "preflight-review" not found — publishing without category.');
+                  // Convert markdown to basic HTML for WordPress
+                  function mdToHtml(md) {
+                    if (!md) return '<p>Review unavailable.</p>';
+                    return md
+                      .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+                      .replace(/`([^`]+)`/g, '<code>$1</code>')
+                      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                      .replace(/^\- (.+)$/gm, '<li>$1</li>')
+                      .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
+                      .replace(/^(?!<[huplo])(.*\S.*)$/gm, '<p>$1</p>')
+                      .replace(/<p><li>/g, '<li>')
+                      .replace(/<\/li><\/p>/g, '</li>');
+                  }
+
                   const reviewContent = [
                     `<h2><a href="${pr.html_url}">PR #${prNumber}</a>: ${pr.title}</h2>`,
                     `<p>${pr.body || 'No description.'}</p>`,
                     `<h2>Doc (Code Quality)</h2>`,
-                    `<p>${docReview || 'Review unavailable.'}</p>`,
+                    mdToHtml(docReview),
                     `<h2>Dalton (Security)</h2>`,
-                    `<p>${daltonReview || 'Review unavailable.'}</p>`,
+                    mdToHtml(daltonReview),
                     `<h2>Pat (Final Decision)</h2>`,
-                    `<p>${patReview}</p>`,
+                    mdToHtml(patReview),
                     `<p><strong>Decision: ${event}</strong></p>`,
                   ].join('\n');
 

@@ -270,12 +270,25 @@ jobs:
                   try {
                     const categoryId = await findCategory('crew-briefing');
                     if (!categoryId) core.warning('Category "crew-briefing" not found — publishing without category.');
+                    function mdToHtml(md) {
+                      if (!md) return '';
+                      return md
+                        .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+                        .replace(/`([^`]+)`/g, '<code>$1</code>')
+                        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                        .replace(/^\- (.+)$/gm, '<li>$1</li>')
+                        .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
+                        .replace(/^(?!<[huplo])(.*\S.*)$/gm, '<p>$1</p>')
+                        .replace(/<p><li>/g, '<li>')
+                        .replace(/<\/li><\/p>/g, '</li>');
+                    }
+
                     const decisionContent = [
                       `<h2>Decision</h2>`,
-                      `<p>${reply}</p>`,
+                      mdToHtml(reply),
                       `<h2>Original Proposal</h2>`,
                       `<p><a href="${discussion.html_url}">View discussion on GitHub</a></p>`,
-                      `<p>${discussion.body}</p>`,
+                      mdToHtml(discussion.body),
                     ].join('\n');
 
                     const wpData = await wpGraphQL(

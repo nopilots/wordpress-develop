@@ -106,7 +106,13 @@ jobs:
                     }`,
                     {
                       title: `Aborted: ${pr.title}`,
-                      content: `<p><a href="${pr.html_url}">PR #${pr.number}</a> was closed after ${revisionCount} revision attempts. The approach needs rethinking.</p>\n<h2>Review Feedback</h2>\n<p>${review.body || 'No details.'}</p>`,
+                      content: (() => {
+                        const feedback = (review.body || 'No details.')
+                          .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+                          .replace(/`([^`]+)`/g, '<code>$1</code>')
+                          .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+                        return `<p><a href="${pr.html_url}">PR #${pr.number}</a> was closed after ${revisionCount} revision attempts. The approach needs rethinking.</p>\n<h2>Review Feedback</h2>\n${feedback}`;
+                      })(),
                       status: 'PUBLISH',
                       ...(categoryId && { categories: { append: true, nodes: [{ id: categoryId }] } }),
                     }
