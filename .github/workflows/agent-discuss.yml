@@ -244,6 +244,7 @@ jobs:
 
                 core.exportVariable('FLIGHT_LOG_TITLE', discussion.title);
                 core.exportVariable('FLIGHT_LOG_CONTENT', decisionContent);
+                core.exportVariable('FLIGHT_LOG_EXCERPT', `Governance decision reached.`);
               }
             }
 
@@ -253,6 +254,7 @@ jobs:
         with:
           title: ${{ env.FLIGHT_LOG_TITLE }}
           content: ${{ env.FLIGHT_LOG_CONTENT }}
+          excerpt: ${{ env.FLIGHT_LOG_EXCERPT }}
           category-slug: crew-briefing
           author-slug: pat
           refine-prompt: 'Review and refine this Crew Briefing post about a governance decision. Keep it concise — the decision and key context only.'

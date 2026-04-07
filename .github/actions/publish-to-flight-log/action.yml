@@ -23,6 +23,9 @@ inputs:
   github-token:
     description: GitHub token for Models API access
     required: true
+  excerpt:
+    description: Short summary for homepage/feed display
+    required: true
   author-slug:
     description: WordPress author username (e.g., pat, doc, dalton, autopilot)
     required: false
@@ -50,6 +53,7 @@ runs:
         POST_CONTENT: ${{ inputs.content }}
         CATEGORY_SLUG: ${{ inputs.category-slug }}
         REFINE_PROMPT: ${{ inputs.refine-prompt }}
+        POST_EXCERPT: ${{ inputs.excerpt }}
         AUTHOR_SLUG: ${{ inputs.author-slug }}
       with:
         script: |
@@ -107,14 +111,15 @@ runs:
 
           // Publish
           const data = await wpGraphQL(
-            `mutation CreatePost($title: String!, $content: String!, $status: PostStatusEnum!, $categories: PostCategoriesInput, $authorId: ID) {
-              createPost(input: { title: $title, content: $content, status: $status, categories: $categories, authorId: $authorId }) {
+            `mutation CreatePost($title: String!, $content: String!, $excerpt: String, $status: PostStatusEnum!, $categories: PostCategoriesInput, $authorId: ID) {
+              createPost(input: { title: $title, content: $content, excerpt: $excerpt, status: $status, categories: $categories, authorId: $authorId }) {
                 post { id uri link }
               }
             }`,
             {
               title: process.env.POST_TITLE,
               content: process.env.POST_CONTENT,
+              excerpt: process.env.POST_EXCERPT,
               status: 'PUBLISH',
               ...(categoryId && { categories: { append: true, nodes: [{ id: categoryId }] } }),
               ...(authorId && { authorId }),

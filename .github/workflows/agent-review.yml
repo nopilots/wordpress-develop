@@ -310,6 +310,7 @@ jobs:
 
               core.exportVariable('FLIGHT_LOG_TITLE', pr.title);
               core.exportVariable('FLIGHT_LOG_CONTENT', reviewContent);
+              core.exportVariable('FLIGHT_LOG_EXCERPT', `Verdict: ${event === 'APPROVE' ? 'Approved' : 'Changes requested'}.`);
             } else {
               await github.rest.issues.addLabels({
                 owner, repo,
@@ -325,6 +326,7 @@ jobs:
         with:
           title: ${{ env.FLIGHT_LOG_TITLE }}
           content: ${{ env.FLIGHT_LOG_CONTENT }}
+          excerpt: ${{ env.FLIGHT_LOG_EXCERPT }}
           category-slug: preflight-review
           author-slug: pat
           refine-prompt: 'Review and refine this Preflight Review. It should show: a link to the PR, a brief summary, and the verdict. Strip verbose review text.'

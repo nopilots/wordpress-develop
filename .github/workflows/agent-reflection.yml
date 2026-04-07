@@ -148,6 +148,7 @@ jobs:
 
             core.exportVariable('FLIGHT_LOG_TITLE', `Week of ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`);
             core.exportVariable('FLIGHT_LOG_CONTENT', postContent);
+            core.exportVariable('FLIGHT_LOG_EXCERPT', `${mergedPRs.length} merged. ${stalePRs.length} stale. ${halted.length} safety incident${halted.length !== 1 ? 's' : ''}.`);
 
       - name: Publish to Flight Log
         if: env.FLIGHT_LOG_CONTENT != ''
@@ -155,6 +156,7 @@ jobs:
         with:
           title: ${{ env.FLIGHT_LOG_TITLE }}
           content: ${{ env.FLIGHT_LOG_CONTENT }}
+          excerpt: ${{ env.FLIGHT_LOG_EXCERPT }}
           category-slug: status-report
           author-slug: autopilot
           refine-prompt: 'Review and refine this Status Report. Fix any raw markdown, ensure clean HTML. Keep it concise — merged PRs, stale work, incidents.'

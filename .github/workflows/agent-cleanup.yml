@@ -121,12 +121,14 @@ jobs:
 
             core.exportVariable('FLIGHT_LOG_TITLE', pr.title);
             core.exportVariable('FLIGHT_LOG_CONTENT', postContent);
+            core.exportVariable('FLIGHT_LOG_EXCERPT', `PR #${pr.number} merged into autopilot.`);
 
       - name: Publish to Flight Log
         uses: ./.github/actions/publish-to-flight-log
         with:
           title: ${{ env.FLIGHT_LOG_TITLE }}
           content: ${{ env.FLIGHT_LOG_CONTENT }}
+          excerpt: ${{ env.FLIGHT_LOG_EXCERPT }}
           category-slug: flight-log
           author-slug: autopilot
           refine-prompt: 'Review and refine this Flight Log post about a merged PR. Fix any raw markdown, ensure clean HTML, keep it concise and polished.'

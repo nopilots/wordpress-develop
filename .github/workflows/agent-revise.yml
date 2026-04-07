@@ -68,6 +68,7 @@ jobs:
               const postContent = `<p><a href="${pr.html_url}">PR #${pr.number}</a> was closed after ${revisionCount} revision attempts. The approach needs rethinking.</p>\n<h2>Review Feedback</h2>\n<p>${review.body || 'No details.'}</p>`;
               core.exportVariable('FLIGHT_LOG_TITLE', pr.title);
               core.exportVariable('FLIGHT_LOG_CONTENT', postContent);
+              core.exportVariable('FLIGHT_LOG_EXCERPT', `PR #${pr.number} closed after ${revisionCount} revision attempts.`);
 
               return;
             }
@@ -125,6 +126,7 @@ jobs:
         with:
           title: ${{ env.FLIGHT_LOG_TITLE }}
           content: ${{ env.FLIGHT_LOG_CONTENT }}
+          excerpt: ${{ env.FLIGHT_LOG_EXCERPT }}
           category-slug: course-correction
           author-slug: pat
           refine-prompt: 'Review and refine this Course Correction post about an abandoned PR. Keep it brief — what was attempted, why it was aborted.'
