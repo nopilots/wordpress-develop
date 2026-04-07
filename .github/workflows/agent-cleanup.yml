@@ -116,7 +116,7 @@ jobs:
             }
 
             // Publish to WordPress
-            const wpRes = await fetch(`${wpUrl}/wp-json/wp/v2/posts`, {
+            const wpRes = await fetch(`${wpUrl}/wp-json/wp/v2/posts/`, {
               method: 'POST',
               headers: {
                 'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
