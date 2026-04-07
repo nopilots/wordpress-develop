@@ -1815,7 +1815,7 @@ class WP_HTML_Tag_Processor {
 					$span_of_dashes = strspn( $html, '-', $closer_at );
 					if ( '>' === $html[ $closer_at + $span_of_dashes ] ) {
 						/*
-						 * Abruptly-closed comments like `<!-->`  and `<!--->` have no clear insertion point
+						 * Abruptly-closed comments like `<!-->` and `<!--->` have no clear insertion point
 						 * for modifiable text. Unlike standard HTML comments, these short forms must be
 						 * restructured to hold text. For example, setting `?` as the modifiable text
 						 * transforms `<!--->` into `<!--?-->`, requiring an additional `-` to be inserted
@@ -3651,7 +3651,7 @@ class WP_HTML_Tag_Processor {
 			: substr( $this->html, $this->text_starts_at, $this->text_length );
 
 		/*
-		 * For abruptly-closed comments (e.g. `<!-->`  and `<!--->`) the stored replacement
+		 * For abruptly-closed comments (e.g. `<!-->` and `<!--->`) the stored replacement
 		 * text includes a trailing `-->` to convert the short form into a valid HTML comment.
 		 * Strip that suffix here so that only the logical text content is returned.
 		 */
@@ -3832,7 +3832,7 @@ class WP_HTML_Tag_Processor {
 		}
 
 		/*
-		 * Abruptly-closed comments like `<!-->`  and `<!--->` have no text region, so the
+		 * Abruptly-closed comments like `<!-->` and `<!--->` have no text region, so the
 		 * token must be restructured into a proper HTML comment to hold the new text.
 		 * For example, `<!--->` with text "X" becomes `<!--X-->`.
 		 *
