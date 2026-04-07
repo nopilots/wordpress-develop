@@ -13,6 +13,7 @@ permissions:
   discussions: write
   issues: write
   contents: read
+  models: read
 
 concurrency:
   group: agent-discuss-${{ github.event.discussion.number || github.event.inputs.discussion_number }}
@@ -96,21 +97,18 @@ jobs:
             }
 
             // Persona order
-            const personas = ['barry', 'dalton', 'aria', 'pat', 'scout'];
-            const decider = 'captain';
+            const personas = ['doc', 'dalton'];
+            const decider = 'pat';
 
             // Count rounds from persona comments
             const personaComments = comments.filter(c =>
-              c.body.startsWith('**Barry**') ||
+              c.body.startsWith('**Doc**') ||
               c.body.startsWith('**Dalton**') ||
-              c.body.startsWith('**Aria**') ||
-              c.body.startsWith('**Pat**') ||
-              c.body.startsWith('**Scout**') ||
-              c.body.startsWith('**Captain**')
+              c.body.startsWith('**Pat**')
             );
 
-            const round = Math.floor(personaComments.length / 5) + 1;
-            const positionInRound = personaComments.length % 5;
+            const round = Math.floor(personaComments.length / 2) + 1;
+            const positionInRound = personaComments.length % 2;
 
             // Max 8 rounds
             if (round > 8) {
@@ -119,16 +117,16 @@ jobs:
             }
 
             // If Captain already spoke, we're done
-            if (personaComments.some(c => c.body.startsWith('**Captain**'))) {
-              core.info('Captain has decided. Discussion complete.');
+            if (personaComments.some(c => c.body.startsWith('**Pat**'))) {
+              core.info('Pat has decided. Discussion complete.');
               return;
             }
 
-            // Determine if it's time for Captain or next persona
+            // Determine if it's time for Pat (decider) or next persona
             let currentPersona;
             if (personaComments.length > 0 && positionInRound === 0 && round > 1) {
               // End of a full round — check consensus
-              const lastRound = personaComments.slice(-5).map(c => c.body.toLowerCase());
+              const lastRound = personaComments.slice(-2).map(c => c.body.toLowerCase());
               const supportSignals = ['agree', 'approve', 'support', 'looks good', 'no concerns', 'in favor'];
               const blockSignals = ['disagree', 'concern', 'block', 'oppose', 'reject', 'risk'];
 
@@ -139,12 +137,12 @@ jobs:
                 if (hasSupport && !hasBlock) supports++;
               }
 
-              if (supports >= 4 || round >= 8) {
+              if (supports >= 2 || round >= 8) {
                 currentPersona = decider;
               } else {
                 currentPersona = personas[0];
               }
-            } else if (positionInRound < 5) {
+            } else if (positionInRound < 2) {
               currentPersona = personas[positionInRound];
             } else {
               currentPersona = decider;
@@ -179,12 +177,12 @@ jobs:
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                model: 'openai/gpt-4.1',
+                model: 'openai/gpt-4o-mini',
                 messages: [
                   { role: 'system', content: systemPrompt },
                   { role: 'user', content: `Here is the discussion so far. Respond in character with your perspective.\n\n${conversationHistory}` },
                 ],
-                max_tokens: 1000,
+                max_tokens: 800,
                 temperature: 0.7,
               }),
             });
