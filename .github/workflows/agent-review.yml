@@ -91,8 +91,6 @@ jobs:
           DALTON_TOKEN: ${{ steps.dalton-token.outputs.token }}
           PAT_TOKEN: ${{ steps.pat-token.outputs.token }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          WP_URL: ${{ secrets.WP_URL }}
-          WP_AUTH: ${{ secrets.WP_AUTH }}
         with:
           script: |
             const fs = require('fs');
@@ -288,128 +286,30 @@ jobs:
               await reviewAsApp(process.env.PAT_TOKEN, patReview, event);
               core.info(`Pat: ${event}`);
 
-              // Publish review insights to The Flight Log
-              const wpUrl = process.env.WP_URL;
-              const wpAuth = process.env.WP_AUTH;
-              if (wpUrl && wpAuth) {
-                const wpGraphQL = async (query, variables = {}) => {
-                  const res = await fetch(`${wpUrl}/graphql`, {
-                    method: 'POST',
-                    headers: {
-                      'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
-                      'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ query, variables }),
-                  });
-                  if (!res.ok) {
-                    const text = await res.text();
-                    throw new Error(`WPGraphQL HTTP ${res.status}: ${text}`);
-                  }
-                  const json = await res.json();
-                  if (json.errors) {
-                    throw new Error(`WPGraphQL error: ${JSON.stringify(json.errors)}`);
-                  }
-                  return json.data;
-                };
+              // Build Flight Log content for composite action
+              // Extract first meaningful line from PR body as summary
+              const firstLine = (pr.body || '')
+                .split('\n')
+                .map(l => l.trim())
+                .find(l => l.length > 10 && !l.startsWith('#') && !l.startsWith('- [')) || '';
 
-                async function findCategory(slug) {
-                  const found = await wpGraphQL(
-                    `query($slug: [String]) { categories(where: { slug: $slug }) { nodes { id } } }`,
-                    { slug: [slug] }
-                  );
-                  return found.categories?.nodes?.[0]?.id || null;
-                }
+              // Extract Pat's rationale (strip the DECISION line)
+              const patRationale = (patReview || '')
+                .replace(/DECISION:\s*(APPROVE|REQUEST_CHANGES)/g, '')
+                .replace(/```[\s\S]*?```/g, '')
+                .replace(/\*\*/g, '')
+                .trim()
+                .substring(0, 500);
 
-                try {
-                  const categoryId = await findCategory('preflight-review');
-                  if (!categoryId) core.warning('Category "preflight-review" not found — publishing without category.');
-                  // Extract first meaningful line from PR body as summary
-                  const firstLine = (pr.body || '')
-                    .split('\n')
-                    .map(l => l.trim())
-                    .find(l => l.length > 10 && !l.startsWith('#') && !l.startsWith('- [')) || '';
+              const reviewContent = [
+                `<p><a href="${pr.html_url}">View PR #${prNumber} on GitHub →</a></p>`,
+                firstLine ? `<p>${firstLine}</p>` : '',
+                `<h2>Verdict: ${event === 'APPROVE' ? 'Approved' : 'Changes Requested'}</h2>`,
+                `<p>${patRationale}</p>`,
+              ].filter(Boolean).join('\n');
 
-                  // Extract Pat's rationale (strip the DECISION line)
-                  const patRationale = (patReview || '')
-                    .replace(/DECISION:\s*(APPROVE|REQUEST_CHANGES)/g, '')
-                    .replace(/```[\s\S]*?```/g, '')
-                    .replace(/\*\*/g, '')
-                    .trim()
-                    .substring(0, 500);
-
-                  const reviewContent = [
-                    `<p><a href="${pr.html_url}">View PR #${prNumber} on GitHub →</a></p>`,
-                    firstLine ? `<p>${firstLine}</p>` : '',
-                    `<h2>Verdict: ${event === 'APPROVE' ? 'Approved' : 'Changes Requested'}</h2>`,
-                    `<p>${patRationale}</p>`,
-                  ].filter(Boolean).join('\n');
-
-                  const wpData = await wpGraphQL(
-                    `mutation CreatePost($title: String!, $content: String!, $status: PostStatusEnum!, $categories: PostCategoriesInput) {
-                      createPost(input: { title: $title, content: $content, status: $status, categories: $categories }) {
-                        post { id uri link }
-                      }
-                    }`,
-                    {
-                      title: pr.title,
-                      content: reviewContent,
-                      status: 'PUBLISH',
-                      ...(categoryId && { categories: { append: true, nodes: [{ id: categoryId }] } }),
-                    }
-                  );
-                  core.info(`Published review insights: ${wpData.createPost.post.link}`);
-
-                  // Post-publish refinement
-                  const postId = wpData.createPost.post.id;
-                  try {
-                    const postData = await wpGraphQL(
-                      `query($id: ID!) { post(id: $id, idType: ID) { title content } }`,
-                      { id: postId }
-                    );
-                    const postContent = postData.post?.content || '';
-
-                    const refineRes = await fetch('https://models.github.ai/inference/chat/completions', {
-                      method: 'POST',
-                      headers: {
-                        'Authorization': `Bearer ${process.env.GITHUB_TOKEN}`,
-                        'Content-Type': 'application/json',
-                      },
-                      body: JSON.stringify({
-                        model: 'openai/gpt-4o-mini',
-                        messages: [{
-                          role: 'system',
-                          content: 'You are a copy editor for "No Pilots" — dispatches from an autonomous AI-governed WordPress project. The voice is professional flight ops. Posts should be concise, well-structured HTML, and only show what matters.',
-                        }, {
-                          role: 'user',
-                          content: `Review and refine this Preflight Review post. It should show: a link to the PR, a brief summary, and the verdict (approved/changes requested) with rationale. Strip any raw markdown, verbose review text, or unnecessary detail. If already good, reply with exactly: NO_CHANGES\n\nOtherwise reply with the complete refined HTML content only.\n\nCurrent content:\n${postContent.substring(0, 3000)}`,
-                        }],
-                        max_tokens: 1000,
-                        temperature: 0.3,
-                      }),
-                    });
-
-                    if (refineRes.ok) {
-                      const refineResult = await refineRes.json();
-                      const refined = refineResult.choices?.[0]?.message?.content || '';
-                      if (refined && !refined.includes('NO_CHANGES')) {
-                        await wpGraphQL(
-                          `mutation($id: ID!, $content: String!) {
-                            updatePost(input: { id: $id, content: $content }) { post { id } }
-                          }`,
-                          { id: postId, content: refined }
-                        );
-                        core.info('Post refined after publish.');
-                      } else {
-                        core.info('Post quality: good, no refinement needed.');
-                      }
-                    }
-                  } catch (qErr) {
-                    core.warning(`Post refinement failed: ${qErr.message}`);
-                  }
-                } catch (wpErr) {
-                  core.setFailed(`Flight Log publish failed: ${wpErr.message}`);
-                }
-              }
+              core.exportVariable('FLIGHT_LOG_TITLE', pr.title);
+              core.exportVariable('FLIGHT_LOG_CONTENT', reviewContent);
             } else {
               await github.rest.issues.addLabels({
                 owner, repo,
@@ -418,3 +318,15 @@ jobs:
               });
               core.setFailed('Pat review failed — Models API unavailable. PR halted.');
             }
+
+      - name: Publish to Flight Log
+        if: env.FLIGHT_LOG_TITLE != ''
+        uses: ./.github/actions/publish-to-flight-log
+        with:
+          title: ${{ env.FLIGHT_LOG_TITLE }}
+          content: ${{ env.FLIGHT_LOG_CONTENT }}
+          category-slug: preflight-review
+          refine-prompt: 'Review and refine this Preflight Review. It should show: a link to the PR, a brief summary, and the verdict. Strip verbose review text.'
+          wp-url: ${{ secrets.WP_URL }}
+          wp-auth: ${{ secrets.WP_AUTH }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}

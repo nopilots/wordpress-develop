@@ -18,11 +18,11 @@ jobs:
   reflect:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Create reflection issue
         uses: actions/github-script@v7
-        env:
-          WP_URL: ${{ secrets.WP_URL }}
-          WP_AUTH: ${{ secrets.WP_AUTH }}
         with:
           script: |
             const owner = context.repo.owner;
@@ -130,125 +130,33 @@ jobs:
 
             core.info('Created weekly reflection issue.');
 
-            // --- Publish to The Flight Log ---
-            const wpUrl = process.env.WP_URL;
-            const wpAuth = process.env.WP_AUTH;
+            // --- Build Flight Log content ---
+            const postContent = [
+              `<h2>Merged this week (${mergedPRs.length})</h2>`,
+              mergedPRs.length
+                ? `<ul>${mergedPRs.map(pr => `<li><a href="${pr.html_url}">#${pr.number}</a>: ${pr.title}</li>`).join('')}</ul>`
+                : '<p>None.</p>',
+              `<h2>Stale PRs (${stalePRs.length})</h2>`,
+              stalePRs.length
+                ? `<ul>${stalePRs.map(pr => `<li><a href="${pr.html_url}">#${pr.number}</a>: ${pr.title} — stale ${Math.floor((Date.now() - new Date(pr.updated_at)) / (1000 * 60 * 60 * 24))}d</li>`).join('')}</ul>`
+                : '<p>None.</p>',
+              `<h2>Safety incidents (${halted.length})</h2>`,
+              halted.length
+                ? `<ul>${halted.map(i => `<li><a href="${i.html_url}">#${i.number}</a>: ${i.title}</li>`).join('')}</ul>`
+                : '<p>None.</p>',
+            ].join('\n');
 
-            if (!wpUrl || !wpAuth) {
-              core.info('WP credentials not set. Skipping blog post.');
-              return;
-            }
+            core.exportVariable('FLIGHT_LOG_TITLE', `Week of ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`);
+            core.exportVariable('FLIGHT_LOG_CONTENT', postContent);
 
-            const wpGraphQL = async (query, variables = {}) => {
-              const res = await fetch(`${wpUrl}/graphql`, {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ query, variables }),
-              });
-              if (!res.ok) {
-                const text = await res.text();
-                throw new Error(`WPGraphQL HTTP ${res.status}: ${text}`);
-              }
-              const json = await res.json();
-              if (json.errors) {
-                throw new Error(`WPGraphQL error: ${JSON.stringify(json.errors)}`);
-              }
-              return json.data;
-            };
-
-            async function findCategory(slug) {
-              const found = await wpGraphQL(
-                `query($slug: [String]) { categories(where: { slug: $slug }) { nodes { id } } }`,
-                { slug: [slug] }
-              );
-              return found.categories?.nodes?.[0]?.id || null;
-            }
-
-            try {
-              const categoryId = await findCategory('status-report');
-              if (!categoryId) core.warning('Category "status-report" not found — publishing without category.');
-              const content = [
-                `<h2>Merged this week (${mergedPRs.length})</h2>`,
-                mergedPRs.length
-                  ? `<ul>${mergedPRs.map(pr => `<li><a href="${pr.html_url}">#${pr.number}</a>: ${pr.title}</li>`).join('')}</ul>`
-                  : '<p>None.</p>',
-                `<h2>Stale PRs (${stalePRs.length})</h2>`,
-                stalePRs.length
-                  ? `<ul>${stalePRs.map(pr => `<li><a href="${pr.html_url}">#${pr.number}</a>: ${pr.title} — stale ${Math.floor((Date.now() - new Date(pr.updated_at)) / (1000 * 60 * 60 * 24))}d</li>`).join('')}</ul>`
-                  : '<p>None.</p>',
-                `<h2>Safety incidents (${halted.length})</h2>`,
-                halted.length
-                  ? `<ul>${halted.map(i => `<li><a href="${i.html_url}">#${i.number}</a>: ${i.title}</li>`).join('')}</ul>`
-                  : '<p>None.</p>',
-              ].join('\n');
-
-              const data = await wpGraphQL(
-                `mutation CreatePost($title: String!, $content: String!, $status: PostStatusEnum!, $categories: PostCategoriesInput) {
-                  createPost(input: { title: $title, content: $content, status: $status, categories: $categories }) {
-                    post { id uri link }
-                  }
-                }`,
-                {
-                  title: `Week of ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`,
-                  content,
-                  status: 'PUBLISH',
-                  ...(categoryId && { categories: { append: true, nodes: [{ id: categoryId }] } }),
-                }
-              );
-              core.info(`Published reflection to The Flight Log: ${data.createPost.post.link}`);
-
-              // Post-publish refinement
-              const postId = data.createPost.post.id;
-              const postLink = data.createPost.post.link;
-              try {
-                const postData = await wpGraphQL(
-                  `query($id: ID!) { post(id: $id, idType: ID) { title content } }`,
-                  { id: postId }
-                );
-                const postTitle = postData.post?.title || '';
-                const postContent = postData.post?.content || '';
-
-                const refineRes = await fetch('https://models.github.ai/inference/chat/completions', {
-                  method: 'POST',
-                  headers: {
-                    'Authorization': `Bearer ${process.env.GITHUB_TOKEN}`,
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({
-                    model: 'openai/gpt-4o-mini',
-                    messages: [{
-                      role: 'system',
-                      content: 'You are a copy editor for a technical blog called "No Pilots" — dispatches from an autonomous AI-governed WordPress project. The voice is professional flight ops. Posts should be concise, well-structured HTML, and only show what matters for the category context. Strip anything redundant.',
-                    }, {
-                      role: 'user',
-                      content: `Review and refine this Status Report post. Fix any raw markdown, remove unnecessary content, ensure clean HTML formatting. If the post is already good, reply with exactly: NO_CHANGES\n\nOtherwise reply with the complete refined HTML content (no markdown, no explanation, just the HTML).\n\nCurrent content:\n${postContent.substring(0, 3000)}`,
-                    }],
-                    max_tokens: 1000,
-                    temperature: 0.3,
-                  }),
-                });
-
-                if (refineRes.ok) {
-                  const refineResult = await refineRes.json();
-                  const refined = refineResult.choices?.[0]?.message?.content || '';
-                  if (refined && !refined.includes('NO_CHANGES')) {
-                    await wpGraphQL(
-                      `mutation($id: ID!, $content: String!) {
-                        updatePost(input: { id: $id, content: $content }) { post { id } }
-                      }`,
-                      { id: postId, content: refined }
-                    );
-                    core.info('Post refined after publish.');
-                  } else {
-                    core.info('Post quality: good, no refinement needed.');
-                  }
-                }
-              } catch (qErr) {
-                core.warning(`Post refinement failed: ${qErr.message}`);
-              }
-            } catch (err) {
-              core.setFailed(`Flight Log publish failed: ${err.message}`);
-            }
+      - name: Publish to Flight Log
+        if: env.FLIGHT_LOG_CONTENT != ''
+        uses: ./.github/actions/publish-to-flight-log
+        with:
+          title: ${{ env.FLIGHT_LOG_TITLE }}
+          content: ${{ env.FLIGHT_LOG_CONTENT }}
+          category-slug: status-report
+          refine-prompt: 'Review and refine this Status Report. Fix any raw markdown, ensure clean HTML. Keep it concise — merged PRs, stale work, incidents.'
+          wp-url: ${{ secrets.WP_URL }}
+          wp-auth: ${{ secrets.WP_AUTH }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
