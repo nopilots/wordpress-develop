@@ -77,19 +77,23 @@ jobs:
               try {
                 // COPILOT_PAT required — only user tokens can mark PRs ready
                 const pat = process.env.COPILOT_PAT;
-                const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls/${pr.number}`, {
-                  method: 'PATCH',
+                const res = await fetch('https://api.github.com/graphql', {
+                  method: 'POST',
                   headers: {
                     'Authorization': `Bearer ${pat}`,
                     'Content-Type': 'application/json',
-                    'Accept': 'application/vnd.github+json',
                   },
-                  body: JSON.stringify({ draft: false }),
+                  body: JSON.stringify({
+                    query: `mutation($id: ID!) {
+                      markPullRequestReadyForReview(input: { pullRequestId: $id }) {
+                        pullRequest { number }
+                      }
+                    }`,
+                    variables: { id: pr.node_id },
+                  }),
                 });
-                if (!res.ok) {
-                  const err = await res.text();
-                  throw new Error(err);
-                }
+                const result = await res.json();
+                if (result.errors) throw new Error(result.errors[0].message);
 
                 core.info(`Marked PR #${pr.number} as ready for review.`);
               } catch (e) {
