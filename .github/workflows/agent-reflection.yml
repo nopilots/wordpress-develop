@@ -20,6 +20,9 @@ jobs:
     steps:
       - name: Create reflection issue
         uses: actions/github-script@v7
+        env:
+          WP_URL: ${{ secrets.WP_URL }}
+          WP_AUTH: ${{ secrets.WP_AUTH }}
         with:
           script: |
             const owner = context.repo.owner;
@@ -110,3 +113,75 @@ jobs:
             });
 
             core.info('Created weekly reflection issue.');
+
+            // --- Publish to The Flight Log ---
+            const wpUrl = process.env.WP_URL;
+            const wpAuth = process.env.WP_AUTH;
+
+            if (!wpUrl || !wpAuth) {
+              core.info('WP credentials not set. Skipping blog post.');
+              return;
+            }
+
+            const wpGraphQL = async (query, variables = {}) => {
+              const res = await fetch(`${wpUrl}/graphql`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ query, variables }),
+              });
+              if (!res.ok) {
+                const text = await res.text();
+                throw new Error(`WPGraphQL HTTP ${res.status}: ${text}`);
+              }
+              const json = await res.json();
+              if (json.errors) {
+                throw new Error(`WPGraphQL error: ${JSON.stringify(json.errors)}`);
+              }
+              return json.data;
+            };
+
+            async function ensureCategory(name, slug) {
+              const found = await wpGraphQL(
+                `query($slug: [String]) { categories(where: { slug: $slug }) { nodes { databaseId } } }`,
+                { slug: [slug] }
+              );
+              if (found.categories?.nodes?.[0]) return found.categories.nodes[0].databaseId;
+              const created = await wpGraphQL(
+                `mutation($name: String!, $slug: String) { createCategory(input: { name: $name, slug: $slug }) { category { databaseId } } }`,
+                { name, slug }
+              );
+              return created.createCategory.category.databaseId;
+            }
+
+            try {
+              const categoryId = await ensureCategory('Weekly Reflection', 'weekly-reflection');
+              const weekOf = new Date().toISOString().split('T')[0];
+              const content = [
+                `<h2>Merged this week (${merged.length})</h2>`,
+                merged.length ? `<ul>${merged.map(m => `<li>${m.replace('- ', '')}</li>`).join('')}</ul>` : '<p>None.</p>',
+                `<h2>Stale PRs (${stale.length})</h2>`,
+                stale.length ? `<ul>${stale.map(s => `<li>${s.replace('- ', '')}</li>`).join('')}</ul>` : '<p>None.</p>',
+                `<h2>Safety incidents (${haltList.length})</h2>`,
+                haltList.length ? `<ul>${haltList.map(h => `<li>${h.replace('- ', '')}</li>`).join('')}</ul>` : '<p>None.</p>',
+              ].join('\n');
+
+              const data = await wpGraphQL(
+                `mutation CreatePost($title: String!, $content: String!, $status: PostStatusEnum!, $catId: ID!) {
+                  createPost(input: { title: $title, content: $content, status: $status, categories: { append: true, nodes: [{ id: $catId }] } }) {
+                    post { id uri link }
+                  }
+                }`,
+                {
+                  title: `Weekly Reflection: ${weekOf}`,
+                  content,
+                  status: 'PUBLISH',
+                  catId: String(categoryId),
+                }
+              );
+              core.info(`Published reflection to The Flight Log: ${data.createPost.post.link}`);
+            } catch (err) {
+              core.setFailed(`Flight Log publish failed: ${err.message}`);
+            }

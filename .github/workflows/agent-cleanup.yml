@@ -136,10 +136,24 @@ jobs:
               return json.data;
             };
 
+            async function ensureCategory(name, slug) {
+              const found = await wpGraphQL(
+                `query($slug: [String]) { categories(where: { slug: $slug }) { nodes { databaseId } } }`,
+                { slug: [slug] }
+              );
+              if (found.categories?.nodes?.[0]) return found.categories.nodes[0].databaseId;
+              const created = await wpGraphQL(
+                `mutation($name: String!, $slug: String) { createCategory(input: { name: $name, slug: $slug }) { category { databaseId } } }`,
+                { name, slug }
+              );
+              return created.createCategory.category.databaseId;
+            }
+
             try {
+              const categoryId = await ensureCategory('Merged Work', 'merged-work');
               const data = await wpGraphQL(
-                `mutation CreatePost($title: String!, $content: String!, $status: PostStatusEnum!) {
-                  createPost(input: { title: $title, content: $content, status: $status }) {
+                `mutation CreatePost($title: String!, $content: String!, $status: PostStatusEnum!, $catId: ID!) {
+                  createPost(input: { title: $title, content: $content, status: $status, categories: { append: true, nodes: [{ id: $catId }] } }) {
                     post { id uri link }
                   }
                 }`,
@@ -147,6 +161,7 @@ jobs:
                   title: `Merged: ${pr.title}`,
                   content: postContent,
                   status: 'PUBLISH',
+                  catId: String(categoryId),
                 }
               );
               core.info(`Published to The Flight Log: ${data.createPost.post.link}`);

@@ -57,6 +57,8 @@ jobs:
           DALTON_TOKEN: ${{ steps.dalton-token.outputs.token }}
           PAT_TOKEN: ${{ steps.pat-token.outputs.token }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WP_URL: ${{ secrets.WP_URL }}
+          WP_AUTH: ${{ secrets.WP_AUTH }}
         with:
           script: |
             const fs = require('fs');
@@ -251,6 +253,76 @@ jobs:
               const event = patReview.includes('DECISION: APPROVE') ? 'APPROVE' : 'REQUEST_CHANGES';
               await reviewAsApp(process.env.PAT_TOKEN, patReview, event);
               core.info(`Pat: ${event}`);
+
+              // Publish review insights to The Flight Log
+              const wpUrl = process.env.WP_URL;
+              const wpAuth = process.env.WP_AUTH;
+              if (wpUrl && wpAuth) {
+                const wpGraphQL = async (query, variables = {}) => {
+                  const res = await fetch(`${wpUrl}/graphql`, {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ query, variables }),
+                  });
+                  if (!res.ok) {
+                    const text = await res.text();
+                    throw new Error(`WPGraphQL HTTP ${res.status}: ${text}`);
+                  }
+                  const json = await res.json();
+                  if (json.errors) {
+                    throw new Error(`WPGraphQL error: ${JSON.stringify(json.errors)}`);
+                  }
+                  return json.data;
+                };
+
+                async function ensureCategory(name, slug) {
+                  const found = await wpGraphQL(
+                    `query($slug: [String]) { categories(where: { slug: $slug }) { nodes { databaseId } } }`,
+                    { slug: [slug] }
+                  );
+                  if (found.categories?.nodes?.[0]) return found.categories.nodes[0].databaseId;
+                  const created = await wpGraphQL(
+                    `mutation($name: String!, $slug: String) { createCategory(input: { name: $name, slug: $slug }) { category { databaseId } } }`,
+                    { name, slug }
+                  );
+                  return created.createCategory.category.databaseId;
+                }
+
+                try {
+                  const categoryId = await ensureCategory('Code Review Insights', 'code-review-insights');
+                  const reviewContent = [
+                    `<h2>PR #${prNumber}: ${pr.title}</h2>`,
+                    `<p>${pr.body || 'No description.'}</p>`,
+                    `<h2>Doc (Code Quality)</h2>`,
+                    `<p>${docReview || 'Review unavailable.'}</p>`,
+                    `<h2>Dalton (Security)</h2>`,
+                    `<p>${daltonReview || 'Review unavailable.'}</p>`,
+                    `<h2>Pat (Final Decision)</h2>`,
+                    `<p>${patReview}</p>`,
+                    `<p><strong>Decision: ${event}</strong></p>`,
+                  ].join('\n');
+
+                  const wpData = await wpGraphQL(
+                    `mutation CreatePost($title: String!, $content: String!, $status: PostStatusEnum!, $catId: ID!) {
+                      createPost(input: { title: $title, content: $content, status: $status, categories: { append: true, nodes: [{ id: $catId }] } }) {
+                        post { id uri link }
+                      }
+                    }`,
+                    {
+                      title: `Review: ${pr.title}`,
+                      content: reviewContent,
+                      status: 'PUBLISH',
+                      catId: String(categoryId),
+                    }
+                  );
+                  core.info(`Published review insights: ${wpData.createPost.post.link}`);
+                } catch (wpErr) {
+                  core.setFailed(`Flight Log publish failed: ${wpErr.message}`);
+                }
+              }
             } else {
               core.warning('Pat review failed — Models API unavailable. PR will not be approved.');
             }

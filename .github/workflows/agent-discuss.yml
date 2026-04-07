@@ -30,6 +30,8 @@ jobs:
         uses: actions/github-script@v7
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WP_URL: ${{ secrets.WP_URL }}
+          WP_AUTH: ${{ secrets.WP_AUTH }}
         with:
           script: |
             const fs = require('fs');
@@ -232,5 +234,70 @@ jobs:
                   labels: ['agent', 'status:ready'],
                 });
                 core.info('Captain created an issue from the discussion.');
+
+                // Publish decision to The Flight Log
+                const wpUrl = process.env.WP_URL;
+                const wpAuth = process.env.WP_AUTH;
+                if (wpUrl && wpAuth) {
+                  const wpGraphQL = async (query, variables = {}) => {
+                    const res = await fetch(`${wpUrl}/graphql`, {
+                      method: 'POST',
+                      headers: {
+                        'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({ query, variables }),
+                    });
+                    if (!res.ok) {
+                      const text = await res.text();
+                      throw new Error(`WPGraphQL HTTP ${res.status}: ${text}`);
+                    }
+                    const json = await res.json();
+                    if (json.errors) {
+                      throw new Error(`WPGraphQL error: ${JSON.stringify(json.errors)}`);
+                    }
+                    return json.data;
+                  };
+
+                  async function ensureCategory(name, slug) {
+                    const found = await wpGraphQL(
+                      `query($slug: [String]) { categories(where: { slug: $slug }) { nodes { databaseId } } }`,
+                      { slug: [slug] }
+                    );
+                    if (found.categories?.nodes?.[0]) return found.categories.nodes[0].databaseId;
+                    const created = await wpGraphQL(
+                      `mutation($name: String!, $slug: String) { createCategory(input: { name: $name, slug: $slug }) { category { databaseId } } }`,
+                      { name, slug }
+                    );
+                    return created.createCategory.category.databaseId;
+                  }
+
+                  try {
+                    const categoryId = await ensureCategory('Governance Decisions', 'governance-decisions');
+                    const decisionContent = [
+                      `<h2>Decision</h2>`,
+                      `<p>${reply}</p>`,
+                      `<h2>Original Proposal</h2>`,
+                      `<p>${discussion.body}</p>`,
+                    ].join('\n');
+
+                    const wpData = await wpGraphQL(
+                      `mutation CreatePost($title: String!, $content: String!, $status: PostStatusEnum!, $catId: ID!) {
+                        createPost(input: { title: $title, content: $content, status: $status, categories: { append: true, nodes: [{ id: $catId }] } }) {
+                          post { id uri link }
+                        }
+                      }`,
+                      {
+                        title: `Decision: ${discussion.title}`,
+                        content: decisionContent,
+                        status: 'PUBLISH',
+                        catId: String(categoryId),
+                      }
+                    );
+                    core.info(`Published decision to The Flight Log: ${wpData.createPost.post.link}`);
+                  } catch (wpErr) {
+                    core.setFailed(`Flight Log publish failed: ${wpErr.message}`);
+                  }
+                }
               }
             }

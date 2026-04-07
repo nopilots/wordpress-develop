@@ -42,6 +42,98 @@ jobs:
             echo "result=conflict" >> $GITHUB_OUTPUT
           fi
 
+      - name: Detect version bump
+        id: version-check
+        if: steps.merge.outputs.result == 'success'
+        run: |
+          CURRENT_VERSION=$(grep -oP "\\\$wp_version = '\K[^']+" src/wp-includes/version.php || echo "unknown")
+          PREVIOUS_VERSION=$(git show HEAD~1:src/wp-includes/version.php 2>/dev/null | grep -oP "\\\$wp_version = '\K[^']+" || echo "unknown")
+          echo "current=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "previous=$PREVIOUS_VERSION" >> $GITHUB_OUTPUT
+          if [ "$CURRENT_VERSION" != "$PREVIOUS_VERSION" ] && [ "$CURRENT_VERSION" != "unknown" ] && [ "$PREVIOUS_VERSION" != "unknown" ]; then
+            echo "bumped=true" >> $GITHUB_OUTPUT
+          else
+            echo "bumped=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Publish release notes
+        if: steps.version-check.outputs.bumped == 'true'
+        uses: actions/github-script@v7
+        env:
+          WP_URL: ${{ secrets.WP_URL }}
+          WP_AUTH: ${{ secrets.WP_AUTH }}
+          CURRENT_VERSION: ${{ steps.version-check.outputs.current }}
+          PREVIOUS_VERSION: ${{ steps.version-check.outputs.previous }}
+        with:
+          script: |
+            const wpUrl = process.env.WP_URL;
+            const wpAuth = process.env.WP_AUTH;
+            if (!wpUrl || !wpAuth) {
+              core.info('WP credentials not set. Skipping blog post.');
+              return;
+            }
+
+            const wpGraphQL = async (query, variables = {}) => {
+              const res = await fetch(`${wpUrl}/graphql`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ query, variables }),
+              });
+              if (!res.ok) {
+                const text = await res.text();
+                throw new Error(`WPGraphQL HTTP ${res.status}: ${text}`);
+              }
+              const json = await res.json();
+              if (json.errors) {
+                throw new Error(`WPGraphQL error: ${JSON.stringify(json.errors)}`);
+              }
+              return json.data;
+            };
+
+            async function ensureCategory(name, slug) {
+              const found = await wpGraphQL(
+                `query($slug: [String]) { categories(where: { slug: $slug }) { nodes { databaseId } } }`,
+                { slug: [slug] }
+              );
+              if (found.categories?.nodes?.[0]) return found.categories.nodes[0].databaseId;
+              const created = await wpGraphQL(
+                `mutation($name: String!, $slug: String) { createCategory(input: { name: $name, slug: $slug }) { category { databaseId } } }`,
+                { name, slug }
+              );
+              return created.createCategory.category.databaseId;
+            }
+
+            const current = process.env.CURRENT_VERSION;
+            const previous = process.env.PREVIOUS_VERSION;
+
+            try {
+              const categoryId = await ensureCategory('Release Notes', 'release-notes');
+              const content = [
+                `<p>WordPress has been updated from <code>${previous}</code> to <code>${current}</code> via upstream sync.</p>`,
+                `<p>The autopilot branch has been automatically updated with the latest changes from trunk.</p>`,
+              ].join('\n');
+
+              const data = await wpGraphQL(
+                `mutation CreatePost($title: String!, $content: String!, $status: PostStatusEnum!, $catId: ID!) {
+                  createPost(input: { title: $title, content: $content, status: $status, categories: { append: true, nodes: [{ id: $catId }] } }) {
+                    post { id uri link }
+                  }
+                }`,
+                {
+                  title: `WordPress ${current} synced to autopilot`,
+                  content,
+                  status: 'PUBLISH',
+                  catId: String(categoryId),
+                }
+              );
+              core.info(`Published release notes: ${data.createPost.post.link}`);
+            } catch (err) {
+              core.setFailed(`Flight Log publish failed: ${err.message}`);
+            }
+
       - name: Create conflict resolution issue
         if: steps.merge.outputs.result == 'conflict'
         uses: actions/github-script@v7
