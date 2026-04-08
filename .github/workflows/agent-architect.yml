@@ -145,7 +145,7 @@ jobs:
               '',
               '| Name | File | Tier | Triggers | Schedule |',
               '|---|---|---|---|---|',
-              ...workflows.map(w => `| ${w.name} | \`${w.file}\` | ${w.tier === 3 ? 'Executive' : w.tier === 2 ? 'Supervisor' : 'Worker'} | ${w.triggers.join(', ')} | ${w.cron ? `\`${w.cron}\`` : '—'} |`),
+              ...workflows.map(w => `| ${w.name} | \`${w.file}\` | ${w.tier === 3 ? 'Executive' : w.tier === 2 ? 'Supervisor' : 'Worker'} | ${w.triggers.join(', ')} | ${w.cron ? `\`${w.cron}\`` : 'N/A'} |`),
               '',
               '## Composite Actions',
               '',
