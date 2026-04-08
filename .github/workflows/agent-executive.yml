@@ -88,6 +88,86 @@ jobs:
 
             const governance = fs.readFileSync('GOVERNANCE.md', 'utf8');
 
+            // Cross-system gap detection
+            const gaps = [];
+
+            // Check workflow run health — which workflows failed recently?
+            const criticalWorkflows = [
+              'Triage', 'Coordinator', 'Draft Converter', 'Preflight Review',
+              'Auto-Merge', 'Post-Merge', 'QA', 'Safety', 'Health Check',
+              'Learn', 'Upstream Sync', 'SITREP', 'Metrics', 'Architect',
+            ];
+            const { data: runs } = await github.rest.actions.listWorkflowRunsForRepo({
+              owner, repo, per_page: 100, created: `>${twoWeeksAgo}`,
+            });
+            for (const name of criticalWorkflows) {
+              const workflowRuns = runs.workflow_runs.filter(r => r.name === name);
+              const failures = workflowRuns.filter(r => r.conclusion === 'failure');
+              const successes = workflowRuns.filter(r => r.conclusion === 'success');
+              if (workflowRuns.length === 0) {
+                gaps.push(`${name}: never ran in the past 14 days`);
+              } else if (failures.length > 0 && successes.length === 0) {
+                gaps.push(`${name}: ${failures.length} failures, 0 successes — completely broken`);
+              } else if (failures.length > successes.length) {
+                gaps.push(`${name}: failing more than succeeding (${failures.length}F/${successes.length}S)`);
+              }
+            }
+
+            // Pipeline flow checks
+            const { data: triageIssues } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'status:triage', per_page: 50,
+            });
+            const staleTriageIssues = triageIssues.filter(i =>
+              (Date.now() - new Date(i.created_at)) > 6 * 60 * 60 * 1000
+            );
+            if (staleTriageIssues.length > 0) {
+              gaps.push(`Triage backlog: ${staleTriageIssues.length} issues stuck in status:triage >6h — Triage may be broken`);
+            }
+
+            const { data: inProgressIssues } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'status:in-progress', per_page: 50,
+            });
+            const staleInProgress = inProgressIssues.filter(i =>
+              (Date.now() - new Date(i.updated_at)) > 6 * 60 * 60 * 1000
+            );
+            if (staleInProgress.length > 0) {
+              gaps.push(`Stale work: ${staleInProgress.length} issues in-progress >6h without updates`);
+            }
+
+            // Check if any open PRs have been waiting >24h for review
+            const { data: openPRs } = await github.rest.pulls.list({
+              owner, repo, state: 'open', per_page: 20,
+            });
+            const stalePRs = openPRs.filter(pr =>
+              !pr.draft && (Date.now() - new Date(pr.created_at)) > 24 * 60 * 60 * 1000
+            );
+            if (stalePRs.length > 0) {
+              gaps.push(`Review bottleneck: ${stalePRs.length} non-draft PRs open >24h`);
+            }
+
+            // Check ARCHITECTURE.md is up to date
+            try {
+              const archContent = fs.readFileSync('ARCHITECTURE.md', 'utf8');
+              const dateMatch = archContent.match(/Auto-generated on (\d{4}-\d{2}-\d{2})/);
+              if (dateMatch) {
+                const genDate = new Date(dateMatch[1]);
+                const daysSinceUpdate = (Date.now() - genDate) / (1000 * 60 * 60 * 24);
+                if (daysSinceUpdate > 14) {
+                  gaps.push(`Architecture diagram stale: last updated ${dateMatch[1]} (${Math.floor(daysSinceUpdate)} days ago)`);
+                }
+              }
+              // Verify workflow count matches actual files
+              const actualFiles = fs.readdirSync('.github/workflows').filter(f => f.startsWith('agent-')).length;
+              const reportedMatch = archContent.match(/(\d+) agent workflows/);
+              if (reportedMatch && parseInt(reportedMatch[1]) !== actualFiles) {
+                gaps.push(`Architecture diagram drift: reports ${reportedMatch[1]} workflows but ${actualFiles} exist`);
+              }
+            } catch (e) {
+              gaps.push('ARCHITECTURE.md missing or unreadable');
+            }
+
+            core.info(`Cross-system gaps found: ${gaps.length}`);
+
             // Build context
             const context_data = [
               `## Metrics (past 14 days)`,
@@ -96,6 +176,9 @@ jobs:
               `Safety incidents: ${recentHalts.length}`,
               `Rejected by triage: ${rejectedIssues.length}`,
               `Backlog: ${readyIssues.length} ready issues`,
+              '',
+              `## Cross-system gaps`,
+              gaps.length > 0 ? gaps.map(g => `- ${g}`).join('\n') : 'None detected.',
               '',
               `## Recent safety incidents`,
               recentHalts.map(i => `- #${i.number}: ${i.title}`).join('\n') || 'None.',
@@ -122,13 +205,15 @@ jobs:
                   role: 'system',
                   content: `You are the Executive of an autonomous AI-governed WordPress project. You assess operational health weekly based on hard data. No speculation — only what the data shows. No AI slop.
 
+Pay special attention to the Cross-system gaps section. These are broken connections between workflows that no individual workflow can detect. A gap means data isn't flowing, a workflow is stuck, or two systems are out of sync. Gaps are your highest priority — they represent systemic failures.
+
 Respond in this exact format:
 
 HEALTH: GREEN or YELLOW or RED
 TREND: IMPROVING or STABLE or DECLINING
 
 ASSESSMENT:
-(2 paragraphs max on system state)
+(2 paragraphs max — system state + any cross-system gaps)
 
 PATTERNS:
 (bullet list of recurring issues, or "None identified")
@@ -137,6 +222,7 @@ ACTIONS:
 (numbered list, each must be one of:)
 - GOVERNANCE_AMENDMENT: {what to change}
 - PRIORITY_SHIFT: #{issue_number} {high or low}
+- SYSTEM_FIX: {describe the broken connection between workflows}
 - NO_ACTION: {reason}`,
                 }, {
                   role: 'user',
