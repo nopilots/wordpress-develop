@@ -5,6 +5,9 @@ on:
     types: [submitted]
   check_suite:
     types: [completed]
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
 
 permissions:
   contents: write
