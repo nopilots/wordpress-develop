@@ -1,0 +1,201 @@
+name: Docs Review Gate
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, edited]
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: agent-docs-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  require-doc-review:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.base.ref == 'autopilot'
+    steps:
+      - name: Enforce peer review for documentation changes
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const prNumber = context.payload.pull_request?.number;
+            if (!prNumber) {
+              core.info('No pull request found in the event payload.');
+              return;
+            }
+
+            const { data: pr } = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: prNumber,
+            });
+
+            // Kill switch
+            const { data: killSwitch } = await github.rest.issues.listForRepo({
+              owner,
+              repo,
+              state: 'open',
+              labels: 'system:off',
+              per_page: 1,
+            });
+            if (killSwitch.length > 0) return;
+
+            if (pr.base.ref !== 'autopilot') {
+              core.info('Non-autopilot base branch. Skipping.');
+              return;
+            }
+
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner,
+              repo,
+              pull_number: prNumber,
+              per_page: 100,
+            });
+
+            const isDocumentation = (filename) => {
+              const docPatterns = [
+                /\.md$/i,
+                /\.rst$/i,
+                /^docs\//i,
+                /^documentation\//i,
+                /(^|\/)readme\.(md|mdx|txt|html)$/i,
+              ];
+              return docPatterns.some((pattern) => pattern.test(filename));
+            };
+
+            const docFiles = files.filter((file) => isDocumentation(file.filename));
+
+            if (docFiles.length === 0) {
+              await github.rest.issues.removeLabel({
+                owner,
+                repo,
+                issue_number: prNumber,
+                name: 'docs-review-required',
+              }).catch(() => {});
+              core.info('No documentation changes detected.');
+              return;
+            }
+
+            const reviews = await github.paginate(github.rest.pulls.listReviews, {
+              owner,
+              repo,
+              pull_number: prNumber,
+              per_page: 100,
+            });
+
+            const hasApproval = reviews.some(
+              (review) =>
+                review.state === 'APPROVED' &&
+                review.user?.login &&
+                review.user.login !== pr.user.login
+            );
+
+            const labelName = 'docs-review-required';
+            const labelExists = await github.rest.issues.getLabel({
+              owner,
+              repo,
+              name: labelName,
+            }).then(
+              () => true,
+              (error) => {
+                if (error.status === 404) {
+                  return false;
+                }
+                throw error;
+              }
+            );
+
+            if (!labelExists) {
+              await github.rest.issues.createLabel({
+                owner,
+                repo,
+                name: labelName,
+                color: 'b60205',
+                description: 'Documentation changes need peer review',
+              });
+            }
+
+            const labelPresent = pr.labels.some((label) => label.name === labelName);
+            const marker = '[docs-review-gate]';
+            const message = [
+              marker,
+              'This pull request modifies documentation. It must receive at least one peer approval from someone other than the author before it can be merged.',
+              '',
+              'Changed documentation files:',
+              ...docFiles.map((file) => `- \`${file.filename}\``),
+            ].join('\n');
+
+            if (!hasApproval) {
+              await github.rest.issues.addLabels({
+                owner,
+                repo,
+                issue_number: prNumber,
+                labels: [labelName],
+              }).catch(() => {});
+
+              if (!pr.draft) {
+                await github.graphql(
+                  `
+                    mutation($id: ID!) {
+                      convertPullRequestToDraft(input: { pullRequestId: $id }) {
+                        pullRequest { number }
+                      }
+                    }
+                  `,
+                  { id: pr.node_id }
+                ).catch(() => {});
+              }
+
+              const { data: comments } = await github.rest.issues.listComments({
+                owner,
+                repo,
+                issue_number: prNumber,
+                per_page: 100,
+              });
+
+              const alreadyCommented = comments.some((comment) =>
+                comment.body?.includes(marker)
+              );
+
+              if (!alreadyCommented) {
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: prNumber,
+                  body: message,
+                });
+              }
+
+              core.setFailed('Documentation changes require a peer approval before merging.');
+              return;
+            }
+
+            await github.rest.issues.removeLabel({
+              owner,
+              repo,
+              issue_number: prNumber,
+              name: labelName,
+            }).catch(() => {});
+
+            if (pr.draft && labelPresent) {
+              await github.graphql(
+                `
+                  mutation($id: ID!) {
+                    markPullRequestReadyForReview(input: { pullRequestId: $id }) {
+                      pullRequest { number }
+                    }
+                  }
+                `,
+                { id: pr.node_id }
+              ).catch(() => {});
+            }
+
+            core.info('Documentation review requirement satisfied.');

@@ -27,6 +27,10 @@ Please read the [GitHub Pull Requests for Code Review](https://make.wordpress.or
 
 In particular, note that the full Trac URL of a ticket is required within the PR body and we request that you check the "Allow edits and access to secrets by maintainers" to allow Core contributors easier work with your submission.  
 
+## Documentation updates
+
+Documentation changes (Markdown files and content under `/docs` or `documentation/`) require at least one peer review approval before merging. Pull requests that touch documentation may be moved back to draft automatically until an approval is recorded.
+
 ## Questions about Contributing?
 
 The [WordPress Slack instance](https://make.wordpress.org/chat/) is the real-time communication platform. You can also join the conversation via the [Make Network of blogs](https://make.wordpress.org).
