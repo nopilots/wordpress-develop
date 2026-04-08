@@ -21,11 +21,9 @@ jobs:
     runs-on: ubuntu-latest
     if: >
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'issues' &&
-       contains(toJSON(github.event.issue.labels), 'safety:halt')) ||
+      github.event_name == 'issues' ||
       (github.event_name == 'pull_request_target' &&
-       github.event.pull_request.merged == false &&
-       github.event.pull_request.base.ref == 'autopilot')
+       github.event.pull_request.merged == false)
     steps:
       - name: Analyze failure and create preventive issue
         uses: actions/github-script@v7
@@ -58,6 +56,11 @@ jobs:
             let failureTitle = '';
 
             if (context.payload.issue) {
+              // Only process issues with safety:halt label
+              if (!context.payload.issue.labels?.some(l => l.name === 'safety:halt')) {
+                core.info('Issue closed without safety:halt. Skipping.');
+                return;
+              }
               const issue = context.payload.issue;
               if (!issue.labels.some(l => l.name === 'safety:halt')) return;
               failureContext = `Issue #${issue.number}: ${issue.title}\n\n${issue.body || ''}`;
