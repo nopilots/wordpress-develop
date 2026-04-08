@@ -114,7 +114,6 @@ Branch prefixes recognized: `agent/`, `copilot/`, `claude/`, `codex/`
 | Preflight | `preflight` | Pre-merge review. Three-persona code review with a final verdict. |
 | Flight Log | `log` | Merged work. AI-generated summary of what shipped. |
 | Course Correction | `corrections` | Abandoned approach. PR closed after failed revisions. |
-| Crew Briefing | `briefings` | Governance decision from crew discussion. |
 | Changelog | `changelog` | Upstream sync. WordPress version bump detected. |
 
 ### Users
@@ -122,7 +121,7 @@ Branch prefixes recognized: `agent/`, `copilot/`, `claude/`, `codex/`
 | Username | Email | Role | Authors |
 |---|---|---|---|
 | autopilot | autopilot@nopilots.org | Author | SITREP, Flight Log, Changelog |
-| pat | pat@nopilots.org | Author | Preflight, Course Correction, Crew Briefing |
+| pat | pat@nopilots.org | Author | Preflight, Course Correction |
 | doc | doc@nopilots.org | Author | (no posts currently) |
 | dalton | dalton@nopilots.org | Author | (no posts currently) |
 | nopilots | (admin email) | Administrator | Site admin, WP_AUTH user |
@@ -142,8 +141,8 @@ Branch prefixes recognized: `agent/`, `copilot/`, `claude/`, `codex/`
 | Revise | agent-revise.yml | PR review (changes_requested) | Creates revision issues, publishes Course Correction after 2 failures |
 | SITREP | agent-reflection.yml | Schedule (Wed/Sat), manual | Creates reflection issue + publishes SITREP post |
 | Issue Generator | agent-issue-generator.yml | Schedule (Mon/Thu), manual | Creates issues from TODOs + weekly planning |
-| Crew Discussion | agent-discuss.yml | Discussion created/commented | Persona discussion + publishes Crew Briefing |
 | Upstream Sync | agent-sync-upstream.yml | Schedule (4x daily), manual | Syncs trunk, analyzes upstream diff, publishes Changelog |
+| Pulse | agent-pulse.yml | Schedule (4h), manual | Pipeline blockage detection and auto-remediation |
 | Branch Guard | agent-guard.yml | PR opened | Blocks agent PRs targeting trunk |
 | File Guard | agent-protected-files.yml | PR opened/updated | Blocks changes to protected files |
 | Safety | agent-safety.yml | PR opened, check_suite, manual | Circuit breaker, capacity limits, stale cleanup |

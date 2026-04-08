@@ -62,7 +62,6 @@ jobs:
               if (onBlock.includes('issues:')) triggers.push('issue event');
               if (onBlock.includes('push:')) triggers.push('push');
               if (onBlock.includes('check_suite:')) triggers.push('check_suite');
-              if (onBlock.includes('discussion')) triggers.push('discussion');
 
               const tier = file.includes('executive') ? 3
                 : (file.includes('qa') || file.includes('metrics') || file.includes('triage')) ? 2
