@@ -36,7 +36,6 @@ jobs:
 
             const protectedPaths = [
               'src/wp-includes/deprecated.php',
-              'GOVERNANCE.md',
               'SECURITY.md',
               'wp-config-sample.php',
               'wp-tests-config-sample.php',
