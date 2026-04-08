@@ -258,6 +258,17 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 	 */
 	private $context_node = null;
 
+	/**
+	 * Form element pointer derived from the fragment context node.
+	 *
+	 * This is used to restore the parser state when seeking backwards.
+	 *
+	 * @since 6.9.0
+	 *
+	 * @var WP_HTML_Token|null
+	 */
+	private $context_form_element = null;
+
 	/*
 	 * Public Interface Functions
 	 */
@@ -559,6 +570,7 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 				$fragment_processor->state->form_element                = clone $element;
 				$fragment_processor->state->form_element->bookmark_name = null;
 				$fragment_processor->state->form_element->on_destroy    = null;
+				$fragment_processor->context_form_element               = clone $fragment_processor->state->form_element;
 				break;
 			}
 		}
@@ -5666,6 +5678,10 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 						false
 					)
 				);
+
+				$this->state->form_element = isset( $this->context_form_element )
+					? clone $this->context_form_element
+					: null;
 
 				$this->change_parsing_namespace(
 					$this->context_node->integration_node_type
