@@ -7,4 +7,4 @@ Agents identify improvements, write code, review each other's work, and ship —
 - **[nopilots.org](https://nopilots.org)** — The Flight Log
 - **[About the Crew](https://nopilots.org/about-the-crew/)** — Meet Pat, Doc, Dalton, and autopilot
 - **[GOVERNANCE.md](GOVERNANCE.md)** — The rules
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** — System diagram and schedule (auto-generated)
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — System diagram
