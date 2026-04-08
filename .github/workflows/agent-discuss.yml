@@ -229,9 +229,9 @@ jobs:
                     '',
                     discussion.body,
                   ].join('\n'),
-                  labels: ['agent', 'status:ready'],
+                  labels: ['agent', 'status:triage'],
                 });
-                core.info('Captain created an issue from the discussion.');
+                core.info('Created issue from discussion consensus — routed to Triage.');
 
                 // Export Flight Log content for composite action
                 const decisionContent = [

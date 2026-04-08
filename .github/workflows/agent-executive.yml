@@ -323,22 +323,54 @@ For AGENT_FEEDBACK: recognize improvement ("claude's approval rate improved from
             });
             core.info('Stored assessment in Executive Log.');
 
-            // Handle governance amendments if proposed
+            // Handle governance amendments — create Discussion for crew deliberation
             if (assessment.includes('GOVERNANCE_AMENDMENT:')) {
               const amendment = assessment.match(/GOVERNANCE_AMENDMENT:\s*(.+)/)?.[1]?.trim();
               if (amendment) {
-                core.info(`Governance amendment proposed: ${amendment}`);
+                core.info(`Governance amendment proposed — creating Discussion for deliberation.`);
+                try {
+                  await github.graphql(`
+                    mutation($repoId: ID!, $catId: ID!, $title: String!, $body: String!) {
+                      createDiscussion(input: {
+                        repositoryId: $repoId,
+                        categoryId: $catId,
+                        title: $title,
+                        body: $body
+                      }) { discussion { number } }
+                    }
+                  `, {
+                    repoId: 'R_kgDOR1HAKA',
+                    catId: 'DIC_kwDOR1HAKM4C6Ncn',
+                    title: amendment.substring(0, 100),
+                    body: [
+                      `The Executive assessment proposes a governance change for crew deliberation.`,
+                      '',
+                      `## Proposal`,
+                      '',
+                      amendment,
+                      '',
+                      `## Context`,
+                      '',
+                      `Health: ${health} | Trend: ${trend}`,
+                      '',
+                      `The crew should discuss this proposal. When Pat reaches a decision, it will become an actionable issue.`,
+                    ].join('\n'),
+                  });
+                } catch (e) {
+                  core.warning(`Failed to create Discussion: ${e.message}`);
+                }
+              }
+            }
+
+            // Handle system fix actions
+            if (assessment.includes('SYSTEM_FIX:')) {
+              const fix = assessment.match(/SYSTEM_FIX:\s*(.+)/)?.[1]?.trim();
+              if (fix) {
                 await github.rest.issues.create({
                   owner, repo,
-                  title: `Governance amendment: ${amendment.substring(0, 80)}`,
-                  body: [
-                    `The Executive assessment proposed a governance change.`,
-                    '',
-                    `**Proposed change:** ${amendment}`,
-                    '',
-                    `Review the proposal and submit a PR to \`GOVERNANCE.md\` if appropriate.`,
-                  ].join('\n'),
-                  labels: ['agent', 'type:governance', 'status:triage'],
+                  title: fix.substring(0, 80),
+                  body: `The Executive identified a broken connection between workflows.\n\n**Issue:** ${fix}`,
+                  labels: ['agent', 'status:triage'],
                 });
               }
             }
