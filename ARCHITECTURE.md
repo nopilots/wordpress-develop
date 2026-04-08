@@ -86,3 +86,35 @@ graph TD
 ## Composite Actions
 
 - `publish-to-flight-log`
+
+## Review Personas
+
+The Preflight Review workflow uses three AI personas loaded from `.github/agent-personas/`:
+
+| Persona | Role | Rubric | Checks |
+|---|---|---|---|
+| Doc | Code Quality | Readability, PHPDoc, Complexity, Tests, Style | Every PR |
+| Dalton | Security | Input Sanitization, Output Escaping, SQL Prep, Capability Checks, Nonce Verification, Attack Surface | Every PR |
+| Pat | Compatibility + Decision | Function Signatures, Hook Compatibility, Return Types, Deprecation Path | Every PR (final verdict) |
+
+## Coverage Matrix
+
+| Component | Operates | Checked By | Checks the Checker | Gap |
+|---|---|---|---|---|
+| Coding Agents | Write code | Preflight Review (Doc, Dalton, Pat) | Executive (gap detection) | — |
+| Coordinator | Assigns issues | Safety (capacity limits) | Executive (gap detection) | — |
+| Draft Converter | Converts drafts | Safety (pipeline freeze) | Executive (gap detection) | — |
+| Preflight Review | Reviews PRs | Metrics (approval rate) | Executive (aggregate trends) | No per-review audit |
+| Doc (persona) | Quality checklist | Metrics (pass rates) | Executive (calibration drift) | No second opinion on individual reviews |
+| Dalton (persona) | Security checklist | Metrics (pass rates) | Executive (calibration drift) | No second opinion on individual reviews |
+| Pat (persona) | Final decision | Metrics (approval rate) | Executive (trend analysis) | No override mechanism besides human kill switch |
+| Triage | Evaluates issues | Executive (rejection rate) | Executive (gap detection) | — |
+| QA | Tests merged code | Learn (on failure) | Executive (gap detection) | — |
+| Metrics | Tracks numbers | Executive (reads metrics) | Executive (self-check) | — |
+| Executive | Strategic assessment | Health Check (connectivity) | Human (kill switch) | Self-referential — no external audit |
+| Health Check | System vitals | Executive (gap detection) | Human (manual trigger) | — |
+| Learn | Failure analysis | Triage (evaluates output) | Executive (gap detection) | — |
+| Architect | System diagram | Preflight Review (PR) | Executive (staleness check) | — |
+| Flight Log (blog) | Publishes dispatches | Health Check (blog audit) | Executive (gap detection) | — |
+
+**Trust terminates at the human.** The kill switch (`system:off` label) halts all tiers immediately.
