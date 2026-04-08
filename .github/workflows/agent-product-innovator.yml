@@ -1,8 +1,8 @@
-name: System Innovator
+name: Product Innovator
 
 on:
   schedule:
-    - cron: '0 0 * * 5'
+    - cron: '0 0 * * 2'
   workflow_dispatch:
 
 permissions:
@@ -12,7 +12,7 @@ permissions:
   models: read
 
 concurrency:
-  group: agent-innovator
+  group: agent-product-innovator
   cancel-in-progress: true
 
 jobs:
@@ -22,7 +22,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Propose novel capability
+      - name: Propose product innovation
         uses: actions/github-script@v7
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -49,61 +49,45 @@ jobs:
               return;
             }
 
-            // Check for existing innovator RFC to avoid flooding
+            // Check for existing product RFC this week
             const { data: openRFCs } = await github.rest.issues.listForRepo({
               owner, repo, state: 'open', labels: 'type:rfc', per_page: 20,
             });
-            const recentInnovation = openRFCs.some(i =>
-              i.title.startsWith('[Innovator]') &&
+            const recentProduct = openRFCs.some(i =>
+              i.title.startsWith('[Product]') &&
               (Date.now() - new Date(i.created_at)) < 7 * 24 * 60 * 60 * 1000
             );
-            if (recentInnovation) {
-              core.info('Innovation RFC already open from this week. Skipping.');
+            if (recentProduct) {
+              core.info('Product RFC already open from this week. Skipping.');
               return;
             }
 
-            // Gather system context
-            const architecture = fs.readFileSync('ARCHITECTURE.md', 'utf8').substring(0, 2000);
-            const governance = fs.readFileSync('GOVERNANCE.md', 'utf8').substring(0, 1500);
-
-            // Recent merged PRs
+            // Gather context about the WordPress codebase
             const { data: closedPRs } = await github.rest.pulls.list({
               owner, repo, state: 'closed', base: 'autopilot', sort: 'updated', direction: 'desc', per_page: 20,
             });
-            const merged = closedPRs
+            const mergedWork = closedPRs
               .filter(pr => pr.merged_at)
               .slice(0, 10)
-              .map(pr => `- #${pr.number}: ${pr.title}`)
+              .map(pr => `- ${pr.title}`)
               .join('\n');
 
-            // Recent failures
-            const { data: allIssues } = await github.rest.issues.listForRepo({
-              owner, repo, state: 'closed', labels: 'safety:halt', per_page: 10,
-            });
-            const failures = allIssues
-              .map(i => `- #${i.number}: ${i.title}`)
-              .join('\n');
-
-            // Executive Log
-            const { data: openIssues } = await github.rest.issues.listForRepo({
-              owner, repo, state: 'open', per_page: 50,
-            });
-            const execLog = openIssues.find(i => i.title === '[Executive Log]');
-            let lastAssessment = 'No Executive assessments yet.';
-            if (execLog) {
-              const { data: comments } = await github.rest.issues.listComments({
-                owner, repo, issue_number: execLog.number, per_page: 3,
-              });
-              if (comments.length > 0) {
-                lastAssessment = comments[comments.length - 1].body.substring(0, 800);
-              }
+            // Scan what areas of WordPress the agents have been touching
+            const touchedFiles = new Set();
+            for (const pr of closedPRs.filter(p => p.merged_at).slice(0, 5)) {
+              try {
+                const { data: files } = await github.rest.pulls.listFiles({
+                  owner, repo, pull_number: pr.number, per_page: 20,
+                });
+                files.forEach(f => {
+                  const dir = f.filename.split('/').slice(0, 3).join('/');
+                  touchedFiles.add(dir);
+                });
+              } catch (e) { /* skip */ }
             }
 
-            // Existing workflow files
-            const workflows = fs.readdirSync('.github/workflows')
-              .filter(f => f.startsWith('agent-'))
-              .map(f => f.replace('agent-', '').replace('.yml', ''))
-              .join(', ');
+            const governance = fs.readFileSync('GOVERNANCE.md', 'utf8').substring(0, 1000);
+            const vision = fs.existsSync('VISION.md') ? fs.readFileSync('VISION.md', 'utf8') : '';
 
             const MODELS = ['openai/gpt-4o-mini', 'anthropic/claude-haiku'];
             const model = MODELS[new Date().getHours() % MODELS.length];
@@ -118,45 +102,40 @@ jobs:
                 model,
                 messages: [{
                   role: 'system',
-                  content: `You are the Innovator for an autonomous AI-governed WordPress project called No Pilots. Your job is to imagine ONE novel capability that the system doesn't have yet.
+                  content: `You are the Product Innovator for No Pilots — an autonomous WordPress project. Your job is to propose ONE improvement to WordPress itself. Not the agent system. The actual WordPress software.
 
-You are not a bug fixer. You are not an improver. You are an inventor. Think about what would make this system fundamentally more capable, more trustworthy, or more valuable.
+Think about what WordPress users, developers, and site owners need. Think about gaps in WordPress core that nobody has addressed. Think about what would make WordPress fundamentally better — not incremental fixes, but real improvements.
 
 Rules:
 - Propose ONE idea only
-- It must be implementable as a GitHub Actions workflow
-- It must NOT duplicate any existing workflow (listed below)
-- It must reference specific data that inspired the idea
-- It must explain why it matters
-- Be specific and concrete, not vague
+- It must improve WordPress for end users or developers
+- It must be implementable within WordPress core (PHP, JS, REST API, etc.)
+- It must respect backwards compatibility per GOVERNANCE.md
+- Reference what inspired the idea (recent work, patterns, ecosystem gaps)
+- Be specific — name files, APIs, functions where possible
 - No AI slop
-
-Existing workflows: ${workflows}
 
 Respond in this exact format:
 TITLE: (short, specific title)
-INSIGHT: (what data or pattern inspired this — one sentence)
+INSIGHT: (what inspired this — one sentence)
 PROPOSAL: (what to build — 2-3 sentences)
-VALUE: (why it matters — one sentence)
-FEASIBILITY: (how to implement — one sentence)`,
+VALUE: (who benefits and how — one sentence)
+FILES: (which WordPress files/areas are involved)`,
                 }, {
                   role: 'user',
-                  content: `Here is the current system state. Find something missing that would be genuinely novel.
+                  content: `Here is what the agents have been working on. Find a gap in WordPress that nobody has addressed yet.
 
-## Architecture
-${architecture}
+## Vision
+${vision}
 
 ## Governance
 ${governance}
 
-## Recent work (merged PRs)
-${merged || 'None.'}
+## Recent merged work
+${mergedWork || 'None yet.'}
 
-## Recent failures
-${failures || 'None.'}
-
-## Latest Executive assessment
-${lastAssessment}`,
+## Areas of the codebase agents have touched
+${[...touchedFiles].join('\n') || 'None yet.'}`,
                 }],
                 max_tokens: 500,
                 temperature: 0.8,
@@ -175,18 +154,18 @@ ${lastAssessment}`,
             const insight = response.match(/INSIGHT:\s*(.+)/)?.[1]?.trim();
             const proposal = response.match(/PROPOSAL:\s*([\s\S]*?)(?=VALUE:|$)/)?.[1]?.trim();
             const value = response.match(/VALUE:\s*(.+)/)?.[1]?.trim();
-            const feasibility = response.match(/FEASIBILITY:\s*(.+)/)?.[1]?.trim();
+            const files = response.match(/FILES:\s*(.+)/)?.[1]?.trim();
 
             if (!title || !proposal) {
-              core.warning('Could not parse innovation proposal.');
+              core.warning('Could not parse product proposal.');
               return;
             }
 
             await github.rest.issues.create({
               owner, repo,
-              title: `[Innovator] ${title}`,
+              title: `[Product] ${title}`,
               body: [
-                `The Innovator proposes a novel capability for the system.`,
+                `The Product Innovator proposes a WordPress improvement.`,
                 '',
                 `**Insight:** ${insight || 'Not specified.'}`,
                 '',
@@ -195,11 +174,11 @@ ${lastAssessment}`,
                 proposal,
                 '',
                 `**Value:** ${value || 'Not specified.'}`,
-                `**Feasibility:** ${feasibility || 'Not specified.'}`,
+                `**Files:** ${files || 'Not specified.'}`,
                 '',
-                `This is an RFC. The crew should evaluate whether this capability is worth building.`,
+                `This is an RFC. Evaluate whether this improvement aligns with WordPress principles and is worth implementing.`,
               ].join('\n'),
               labels: ['agent', 'type:rfc', 'status:triage'],
             });
 
-            core.info(`Innovation proposed: ${title}`);
+            core.info(`Product innovation proposed: ${title}`);
