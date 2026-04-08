@@ -229,6 +229,10 @@ jobs:
             if (!docDone) {
               const docPrompt = fs.readFileSync('.github/agent-personas/doc.md', 'utf8');
               docReview = await askModel(docPrompt, `Review this pull request for code quality.\n\n${prContext}`);
+              // Validate rubric output
+              if (docReview && !docReview.includes('READABILITY:')) {
+                core.warning('Doc review missing rubric checklist.');
+              }
               if (docReview) {
                 await postAsApp(process.env.DOC_TOKEN, docReview);
                 core.info('Doc reviewed.');
@@ -245,6 +249,10 @@ jobs:
             if (!daltonDone) {
               const daltonPrompt = fs.readFileSync('.github/agent-personas/dalton.md', 'utf8');
               daltonReview = await askModel(daltonPrompt, `Review this pull request for security concerns.\n\n${prContext}`);
+              // Validate rubric output
+              if (daltonReview && !daltonReview.includes('INPUT_SANITIZATION:')) {
+                core.warning('Dalton review missing rubric checklist.');
+              }
               if (daltonReview) {
                 await postAsApp(process.env.DALTON_TOKEN, daltonReview);
                 core.info('Dalton reviewed.');

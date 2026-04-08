@@ -11,6 +11,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+
     steps:
       - name: Verify Flight Log and agent systems
         uses: actions/github-script@v7
@@ -160,6 +161,9 @@ jobs:
                   failures.push(`COPILOT_PAT invalid: ${patData.message || patData.errors[0].message}`);
                 } else {
                   core.info(`COPILOT_PAT valid: ${patData.data.viewer.login}`);
+                  // Check PAT expiry (fine-grained PATs include expiry in response headers)
+                  // Note: classic PATs don't expose expiry. This is best-effort.
+                  core.info('COPILOT_PAT expiry check: classic PATs do not expose expiry dates. Monitor manually.');
                 }
               } catch (e) {
                 failures.push(`COPILOT_PAT check failed: ${e.message}`);

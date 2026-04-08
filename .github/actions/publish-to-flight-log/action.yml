@@ -30,6 +30,10 @@ inputs:
     description: WordPress author username (e.g., pat, doc, dalton, autopilot)
     required: false
     default: ''
+  skip-refinement:
+    description: Skip the post refinement step
+    required: false
+    default: 'false'
 
 outputs:
   post-id:
@@ -55,6 +59,7 @@ runs:
         REFINE_PROMPT: ${{ inputs.refine-prompt }}
         POST_EXCERPT: ${{ inputs.excerpt }}
         AUTHOR_SLUG: ${{ inputs.author-slug }}
+        SKIP_REFINEMENT: ${{ inputs.skip-refinement }}
       with:
         script: |
           const wpUrl = process.env.WP_URL;
@@ -160,6 +165,7 @@ runs:
           core.info(`Published: ${postLink}`);
 
           // Refine
+          if (process.env.SKIP_REFINEMENT !== 'true') {
           try {
             const postData = await wpGraphQL(
               `query($id: ID!) { post(id: $id, idType: ID) { title content } }`,
@@ -210,6 +216,9 @@ runs:
             }
           } catch (qErr) {
             core.warning(`Post refinement failed: ${qErr.message}`);
+          }
+          } else {
+            core.info('Refinement skipped.');
           }
 
     - name: Report publish failure

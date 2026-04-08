@@ -71,6 +71,16 @@ jobs:
               core.info(`Auto-closed stale issue #${issue.number}`);
             }
 
+            // Pipeline freeze detection: status:ready issues >2 hours old with no in-progress work
+            const readyIssues = issues.filter(i =>
+              i.labels.some(l => l.name === 'status:ready') &&
+              (Date.now() - new Date(i.created_at)) > 2 * 60 * 60 * 1000
+            );
+            const inProgress = issues.filter(i => i.labels.some(l => l.name === 'status:in-progress'));
+            if (readyIssues.length > 0 && inProgress.length === 0) {
+              reasons.push(`Pipeline may be frozen: ${readyIssues.length} ready issues >2h old, no in-progress work`);
+            }
+
             if (issues.length > 20) {
               halt = true;
               reasons.push(`Open agent issues: ${issues.length} (limit: 20)`);

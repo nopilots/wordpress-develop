@@ -118,6 +118,7 @@ jobs:
           category-slug: sitrep
           author-slug: autopilot
           refine-prompt: 'Review this Metrics Report. Keep the table format. No prose — just the numbers. No AI slop.'
+          skip-refinement: 'true'
           wp-url: ${{ secrets.WP_URL }}
           wp-auth: ${{ secrets.WP_AUTH }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
