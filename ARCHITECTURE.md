@@ -60,28 +60,28 @@ graph TD
 
 ## Workflows
 
-| Name | File | Tier | Triggers |
-|---|---|---|---|
-| Architect | `agent-architect.yml` | Worker | schedule, manual, PR event, review event, issue event, push, check_suite, discussion |
-| Post-Merge | `agent-cleanup.yml` | Worker | PR event, issue event |
-| Coordinator | `agent-coordinator.yml` | Worker | schedule, manual, issue event |
-| Crew Discussion | `agent-discuss.yml` | Worker | manual, issue event, discussion |
-| Executive | `agent-executive.yml` | Executive | schedule, manual, issue event |
-| Branch Guard | `agent-guard.yml` | Worker | PR event, issue event |
-| Health Check | `agent-health-check.yml` | Worker | schedule, manual, issue event |
-| Issue Generator | `agent-issue-generator.yml` | Worker | schedule, manual, issue event, discussion |
-| Learn | `agent-learn.yml` | Worker | manual, PR event, issue event |
-| Auto-Merge | `agent-merge.yml` | Worker | review event, check_suite |
-| Metrics | `agent-metrics.yml` | Supervisor | schedule, manual, issue event |
-| File Guard | `agent-protected-files.yml` | Worker | PR event, issue event |
-| QA | `agent-qa.yml` | Supervisor | schedule, manual, issue event, push |
-| Draft Converter | `agent-ready.yml` | Worker | schedule, manual, check_suite |
-| SITREP | `agent-reflection.yml` | Worker | schedule, manual, issue event |
-| Preflight Review | `agent-review.yml` | Worker | manual, PR event |
-| Revise | `agent-revise.yml` | Worker | review event, issue event |
-| Safety | `agent-safety.yml` | Worker | manual, PR event, issue event, check_suite |
-| Upstream Sync | `agent-sync-upstream.yml` | Worker | schedule, manual, issue event |
-| Triage | `agent-triage.yml` | Supervisor | manual, issue event |
+| Name | File | Tier | Triggers | Schedule |
+|---|---|---|---|---|
+| Architect | `agent-architect.yml` | Worker | schedule, manual, push | `0 0 * * 1` |
+| Post-Merge | `agent-cleanup.yml` | Worker | PR event | — |
+| Coordinator | `agent-coordinator.yml` | Worker | schedule, manual, issue event | `0 * * * *` |
+| Crew Discussion | `agent-discuss.yml` | Worker | manual, discussion | — |
+| Executive | `agent-executive.yml` | Executive | schedule, manual | `0 6 * * 4` |
+| Branch Guard | `agent-guard.yml` | Worker | PR event | — |
+| Health Check | `agent-health-check.yml` | Worker | schedule, manual | `0 6 * * *` |
+| Issue Generator | `agent-issue-generator.yml` | Worker | schedule, manual | `0 0 * * *` |
+| Learn | `agent-learn.yml` | Worker | manual, PR event, issue event | — |
+| Auto-Merge | `agent-merge.yml` | Worker | review, check_suite | — |
+| Metrics | `agent-metrics.yml` | Supervisor | schedule, manual | `0 2 * * 3` |
+| File Guard | `agent-protected-files.yml` | Worker | PR event | — |
+| QA | `agent-qa.yml` | Supervisor | schedule, manual, push | `0 4 * * *` |
+| Draft Converter | `agent-ready.yml` | Worker | schedule, manual, check_suite | `*/10 * * * *` |
+| SITREP | `agent-reflection.yml` | Worker | schedule, manual | `0 0 * * 3,6` |
+| Preflight Review | `agent-review.yml` | Worker | manual, PR event | — |
+| Revise | `agent-revise.yml` | Worker | review | — |
+| Safety | `agent-safety.yml` | Worker | manual, PR event, check_suite | — |
+| Upstream Sync | `agent-sync-upstream.yml` | Worker | schedule, manual | `0 3,9,15,21 * * *` |
+| Triage | `agent-triage.yml` | Supervisor | manual, issue event | — |
 
 ## Composite Actions
 
