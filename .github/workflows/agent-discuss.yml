@@ -170,7 +170,7 @@ jobs:
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                model: 'openai/gpt-4o-mini',
+                model: ['openai/gpt-4o-mini', 'anthropic/claude-haiku'][new Date().getHours() % 2],
                 messages: [
                   { role: 'system', content: systemPrompt },
                   { role: 'user', content: `Here is the discussion so far. Respond in character with your perspective.\n\n${conversationHistory}` },

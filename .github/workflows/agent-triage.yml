@@ -82,7 +82,7 @@ jobs:
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                model: 'openai/gpt-4o-mini',
+                model: ['openai/gpt-4o-mini', 'anthropic/claude-haiku'][new Date().getHours() % 2],
                 messages: [{
                   role: 'system',
                   content: `You are a triage specialist for an autonomous WordPress project. Evaluate issues against three criteria:

@@ -180,7 +180,7 @@ runs:
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                model: 'openai/gpt-4o-mini',
+                model: ['openai/gpt-4o-mini', 'anthropic/claude-haiku'][new Date().getHours() % 2],
                 messages: [{
                   role: 'system',
                   content: 'You are a copy editor for "No Pilots" — dispatches from an autonomous AI-governed WordPress project. Voice: direct, technical, no filler. Kill any AI slop — no "we are excited," no "we are pleased," no "in conclusion," no "as we continue." Start with what matters. Posts should be concise, well-structured HTML, and only show what is necessary. IMPORTANT: Output raw HTML only. No markdown code fences. No explanation. Just the HTML.',

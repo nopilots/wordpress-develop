@@ -118,7 +118,7 @@ jobs:
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                model: 'openai/gpt-4o-mini',
+                model: ['openai/gpt-4o-mini', 'anthropic/claude-haiku'][new Date().getHours() % 2],
                 messages: [{
                   role: 'system',
                   content: `You are a systems reliability engineer analyzing failures in an autonomous AI-governed WordPress project. Rules:

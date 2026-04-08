@@ -117,7 +117,7 @@ jobs:
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                model: 'openai/gpt-4o-mini',
+                model: ['openai/gpt-4o-mini', 'anthropic/claude-haiku'][new Date().getHours() % 2],
                 messages: [{
                   role: 'system',
                   content: `You are the Executive of an autonomous AI-governed WordPress project. You assess operational health weekly based on hard data. No speculation — only what the data shows. No AI slop.

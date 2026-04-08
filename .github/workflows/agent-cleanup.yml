@@ -99,7 +99,7 @@ jobs:
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                model: 'openai/gpt-4o-mini',
+                model: ['openai/gpt-4o-mini', 'anthropic/claude-haiku'][new Date().getHours() % 2],
                 messages: [{
                   role: 'user',
                   content: `Write a short dispatch (2-3 paragraphs) about this merged PR. What changed, why it matters, what it fixes. Direct, technical, no filler. No "we are excited," no "we are pleased to announce," no preamble. Start with what changed.\n\nPR #${pr.number}: ${pr.title}\n\n${body?.substring(0, 1000) || 'No description.'}\n\nReviews:\n${reviewSummary || 'No reviews.'}\n\nOutput valid HTML. Use <p>, <code>, <strong> tags. Wrap function names and file paths in <code>. No markdown.`,

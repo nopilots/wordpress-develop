@@ -159,33 +159,47 @@ jobs:
               '```',
             ].join('\n');
 
-            // Helper: call GitHub Models API
+            // Helper: call GitHub Models API with model rotation and fallback
+            const MODELS = ['openai/gpt-4o-mini', 'anthropic/claude-haiku'];
             async function askModel(systemPrompt, userPrompt) {
-              const res = await fetch('https://models.github.ai/inference/chat/completions', {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${process.env.GITHUB_TOKEN}`,
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                  model: 'openai/gpt-4o-mini',
-                  messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: userPrompt },
-                  ],
-                  max_tokens: 400,
-                  temperature: 0.5,
-                }),
-              });
+              const primary = MODELS[new Date().getHours() % MODELS.length];
+              const fallbacks = MODELS.filter(m => m !== primary);
 
-              if (!res.ok) {
-                const err = await res.text();
-                core.warning(`Models API error: ${err}`);
-                return null;
+              for (const model of [primary, ...fallbacks]) {
+                try {
+                  const res = await fetch('https://models.github.ai/inference/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${process.env.GITHUB_TOKEN}`,
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      model,
+                      messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: userPrompt },
+                      ],
+                      max_tokens: 400,
+                      temperature: 0.5,
+                    }),
+                  });
+
+                  if (res.ok) {
+                    const result = await res.json();
+                    const content = result.choices?.[0]?.message?.content;
+                    if (content) {
+                      core.info(`Model: ${model}`);
+                      return content;
+                    }
+                  }
+                  core.warning(`${model} failed, trying fallback...`);
+                } catch (e) {
+                  core.warning(`${model} error: ${e.message}`);
+                }
               }
 
-              const result = await res.json();
-              return result.choices?.[0]?.message?.content || null;
+              core.warning('All models failed.');
+              return null;
             }
 
             // Helper: post comment as an app
