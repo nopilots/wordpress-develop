@@ -50,22 +50,28 @@ jobs:
             for (const file of files) {
               const content = fs.readFileSync(path.join(workflowDir, file), 'utf8');
               const name = content.match(/^name:\s*(.+)/m)?.[1]?.trim() || file;
+
+              // Extract only the on: block (between "on:" and "permissions:" or "jobs:")
+              const onBlock = content.match(/^on:\n([\s\S]*?)(?=\n\w)/m)?.[1] || '';
               const triggers = [];
 
-              if (content.includes('schedule:')) triggers.push('schedule');
-              if (content.includes('workflow_dispatch')) triggers.push('manual');
-              if (content.includes('pull_request_target')) triggers.push('PR event');
-              if (content.includes('pull_request_review')) triggers.push('review event');
-              if (content.includes('issues:')) triggers.push('issue event');
-              if (content.includes('push:')) triggers.push('push');
-              if (content.includes('check_suite:')) triggers.push('check_suite');
-              if (content.includes('discussion')) triggers.push('discussion');
+              if (onBlock.includes('schedule:')) triggers.push('schedule');
+              if (onBlock.includes('workflow_dispatch')) triggers.push('manual');
+              if (onBlock.includes('pull_request_target')) triggers.push('PR event');
+              if (onBlock.includes('pull_request_review')) triggers.push('review');
+              if (onBlock.includes('issues:')) triggers.push('issue event');
+              if (onBlock.includes('push:')) triggers.push('push');
+              if (onBlock.includes('check_suite:')) triggers.push('check_suite');
+              if (onBlock.includes('discussion')) triggers.push('discussion');
 
               const tier = file.includes('executive') ? 3
                 : (file.includes('qa') || file.includes('metrics') || file.includes('triage')) ? 2
                 : 0;
 
-              workflows.push({ file, name, triggers, tier });
+              // Extract cron schedule if present
+              const cron = onBlock.match(/cron:\s*'([^']+)'/)?.[1] || '';
+
+              workflows.push({ file, name, triggers, tier, cron });
             }
 
             // Check for composite actions
@@ -137,9 +143,9 @@ jobs:
               '',
               '## Workflows',
               '',
-              '| Name | File | Tier | Triggers |',
-              '|---|---|---|---|',
-              ...workflows.map(w => `| ${w.name} | \`${w.file}\` | ${w.tier === 3 ? 'Executive' : w.tier === 2 ? 'Supervisor' : 'Worker'} | ${w.triggers.join(', ')} |`),
+              '| Name | File | Tier | Triggers | Schedule |',
+              '|---|---|---|---|---|',
+              ...workflows.map(w => `| ${w.name} | \`${w.file}\` | ${w.tier === 3 ? 'Executive' : w.tier === 2 ? 'Supervisor' : 'Worker'} | ${w.triggers.join(', ')} | ${w.cron ? `\`${w.cron}\`` : '—'} |`),
               '',
               '## Composite Actions',
               '',
