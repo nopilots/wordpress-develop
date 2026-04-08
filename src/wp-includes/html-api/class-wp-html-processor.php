@@ -526,7 +526,6 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 
 		$fragment_processor->compat_mode = $this->compat_mode;
 
-		// @todo Create "fake" bookmarks for non-existent but implied nodes.
 		$fragment_processor->bookmarks['root-node'] = new WP_HTML_Span( 0, 0 );
 		$root_node                                  = new WP_HTML_Token(
 			'root-node',
@@ -540,7 +539,11 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 		$fragment_processor->context_node->bookmark_name = 'context-node';
 		$fragment_processor->context_node->on_destroy    = null;
 
-		$fragment_processor->breadcrumbs = array( 'HTML', $fragment_processor->context_node->node_name );
+		$fragment_processor->breadcrumbs = array( 'HTML' );
+
+		if ( 'HTML' !== $fragment_processor->context_node->node_name ) {
+			$fragment_processor->state->stack_of_open_elements->push( $fragment_processor->context_node );
+		}
 
 		if ( 'TEMPLATE' === $fragment_processor->context_node->node_name ) {
 			$fragment_processor->state->stack_of_template_insertion_modes[] = WP_HTML_Processor_State::INSERTION_MODE_IN_TEMPLATE;
@@ -828,14 +831,15 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 			return empty( $this->element_queue ) ? false : $this->next_visitable_token();
 		}
 
-		$is_pop = WP_HTML_Stack_Event::POP === $this->current_element->operation;
+		$is_pop        = WP_HTML_Stack_Event::POP === $this->current_element->operation;
+		$bookmark_name = $this->current_element->token->bookmark_name;
 
 		/*
 		 * The root node only exists in the fragment parser, and closing it
 		 * indicates that the parse is complete. Stop before popping it from
 		 * the breadcrumbs.
 		 */
-		if ( 'root-node' === $this->current_element->token->bookmark_name ) {
+		if ( 'root-node' === $bookmark_name ) {
 			return $this->next_visitable_token();
 		}
 
@@ -844,6 +848,10 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 			array_pop( $this->breadcrumbs );
 		} else {
 			$this->breadcrumbs[] = $this->current_element->token->node_name;
+		}
+
+		if ( 'context-node' === $bookmark_name ) {
+			return $this->next_visitable_token();
 		}
 
 		// Avoid sending close events for elements which don't expect a closing.
@@ -5667,6 +5675,10 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 					)
 				);
 
+				if ( 'HTML' !== $this->context_node->node_name ) {
+					$this->state->stack_of_open_elements->push( $this->context_node );
+				}
+
 				$this->change_parsing_namespace(
 					$this->context_node->integration_node_type
 						? 'html'
@@ -5678,7 +5690,7 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 				}
 
 				$this->reset_insertion_mode_appropriately();
-				$this->breadcrumbs = array_slice( $this->breadcrumbs, 0, 2 );
+				$this->breadcrumbs = array( 'HTML' );
 				parent::seek( $this->context_node->bookmark_name );
 			}
 		}

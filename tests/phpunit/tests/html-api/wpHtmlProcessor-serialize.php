@@ -344,6 +344,19 @@ class Tests_HtmlApi_WpHtmlProcessor_Serialize extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Ensures that fragments parsed in a table row context handle table cells.
+	 */
+	public function test_fragment_table_row_context_serializes_cells() {
+		$processor = WP_HTML_Processor::create_fragment( '<td>One<td>Two', '<tr>' );
+
+		$this->assertSame(
+			'<td>One</td><td>Two</td>',
+			$processor->serialize(),
+			'Should serialize table cell tags when parsing fragments inside a table row.'
+		);
+	}
+
+	/**
 	 * Ensures that leading newlines in PRE, LISTING, and TEXTAREA elements are preserved upon normalization,
 	 * and that normalization is idempotent in these cases.
 	 *
