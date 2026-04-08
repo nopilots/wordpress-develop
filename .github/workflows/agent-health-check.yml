@@ -143,7 +143,85 @@ jobs:
               }
             }
 
-            // 4. Check COPILOT_PAT is valid
+            // 4. Blog audit — check published posts for quality issues
+              try {
+                const postsRes = await fetch(`${wpUrl}/graphql`, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    query: `{ posts(first: 50, where: { status: PUBLISH }) {
+                      nodes { title excerpt content slug categories { nodes { slug } } author { node { slug } } }
+                    } }`,
+                  }),
+                });
+
+                if (postsRes.ok) {
+                  const postsData = await postsRes.json();
+                  const posts = postsData.data?.posts?.nodes || [];
+                  core.info(`Blog: ${posts.length} published posts`);
+
+                  // Check for issues
+                  const issues = [];
+                  const slugs = new Set();
+                  for (const post of posts) {
+                    // Duplicate slugs
+                    if (slugs.has(post.slug)) {
+                      issues.push(`Duplicate slug: "${post.slug}"`);
+                    }
+                    slugs.add(post.slug);
+
+                    // Missing excerpt
+                    if (!post.excerpt || post.excerpt.trim().length < 5) {
+                      issues.push(`Missing excerpt: "${post.title}"`);
+                    }
+
+                    // Uncategorized posts
+                    const cats = post.categories?.nodes?.map(c => c.slug) || [];
+                    if (cats.length === 0 || (cats.length === 1 && cats[0] === 'uncategorized')) {
+                      issues.push(`Uncategorized: "${post.title}"`);
+                    }
+
+                    // Missing author
+                    if (!post.author?.node?.slug) {
+                      issues.push(`Missing author: "${post.title}"`);
+                    }
+
+                    // Raw markdown leaked into content
+                    const content = post.content || '';
+                    if (content.includes('```') || content.includes('**') || content.match(/^#+ /m)) {
+                      issues.push(`Raw markdown in content: "${post.title}"`);
+                    }
+                  }
+
+                  if (issues.length > 0) {
+                    core.warning(`Blog audit: ${issues.length} issue(s) found`);
+                    for (const issue of issues.slice(0, 5)) {
+                      core.warning(`  ${issue}`);
+                    }
+                    // Create a cleanup issue if problems found
+                    const { data: existingCleanup } = await github.rest.issues.listForRepo({
+                      owner, repo, state: 'open', per_page: 50,
+                    });
+                    if (!existingCleanup.some(i => i.title === '[Blog] Content cleanup needed')) {
+                      await github.rest.issues.create({
+                        owner, repo,
+                        title: '[Blog] Content cleanup needed',
+                        body: `The daily health check found ${issues.length} issue(s) with published posts:\n\n${issues.map(i => '- ' + i).join('\n')}\n\nReview and fix in WordPress admin.`,
+                        labels: ['agent'],
+                      });
+                    }
+                  } else {
+                    core.info('Blog audit: all posts clean.');
+                  }
+                }
+              } catch (e) {
+                core.warning(`Blog audit failed: ${e.message}`);
+              }
+
+            // 5. Check COPILOT_PAT is valid
             if (!process.env.COPILOT_PAT) {
               failures.push('COPILOT_PAT secret is not set.');
             } else {
