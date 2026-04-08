@@ -115,8 +115,13 @@ class Tests_HtmlApi_WpHtmlTagProcessorScriptTag extends WP_UnitTestCase {
 			'Script tag with language=" javascript"'     => array( '<script language=" javascript"></script>', null ),
 
 			// JSON MIME types - should be JSON.
-			'Script tag with application/json type'      => array( '<script type="application/json"></script>', 'json' ),
-			'Script tag with text/json type'             => array( '<script type="text/json"></script>', 'json' ),
+			'Script tag with application/json type'       => array( '<script type="application/json"></script>', 'json' ),
+			'Script tag with text/json type'              => array( '<script type="text/json"></script>', 'json' ),
+			'Script tag with application/json charset'    => array( '<script type="application/json; charset=utf-8"></script>', 'json' ),
+			'Script tag with application/ld+json type'    => array( '<script type="application/ld+json"></script>', 'json' ),
+			'Script tag with application/ld+json charset' => array( '<script type="application/ld+json; charset=utf-8"></script>', 'json' ),
+			'Script tag with application/json+oembed'     => array( '<script type="application/json+oembed"></script>', 'json' ),
+			'Script tag with text/activity+json type'     => array( '<script type="text/activity+json"></script>', 'json' ),
 
 			// importmap and speculationrules - should be JSON.
 			'Script tag with importmap type'             => array( '<script type="importmap"></script>', 'json' ),
@@ -136,6 +141,7 @@ class Tests_HtmlApi_WpHtmlTagProcessorScriptTag extends WP_UnitTestCase {
 			// Unknown types should return null.
 			'Script tag with unknown MIME type'          => array( '<script type="text/plain"></script>', null ),
 			'Script tag with application/xml type'       => array( '<script type="application/xml"></script>', null ),
+			'Script tag with application/jsonish type'   => array( '<script type="application/jsonish"></script>', null ),
 			'Script tag with random type'                => array( '<script type="random/type"></script>', null ),
 
 			// Non-script tags - unknown content type.
