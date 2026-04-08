@@ -15,7 +15,7 @@ permissions:
   models: read
 
 concurrency:
-  group: agent-triage-${{ github.event.issue.number || github.event.inputs.issue_number }}
+  group: agent-triage-${{ github.event.issue.number || github.event.inputs.issue_number || 'default' }}
   cancel-in-progress: true
 
 jobs:
