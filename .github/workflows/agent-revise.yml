@@ -6,7 +6,7 @@ on:
 
 permissions:
   issues: write
-  pull-requests: read
+  pull-requests: write
   contents: read
   models: read
 
@@ -108,7 +108,7 @@ jobs:
                 '',
                 `<!-- revision: ${revisionCount + 1} -->`,
               ].join('\n'),
-              labels: ['agent', 'status:ready'],
+              labels: ['agent', 'status:triage'],
             });
 
             // Mark on the PR that a revision was requested

@@ -110,10 +110,14 @@ jobs:
                 model: 'openai/gpt-4o-mini',
                 messages: [{
                   role: 'system',
-                  content: 'You are a systems reliability engineer analyzing failures in an autonomous AI-governed WordPress project. Your job is to identify the root cause and propose a specific, actionable preventive measure. Be concise.',
+                  content: `You are a systems reliability engineer analyzing failures in an autonomous AI-governed WordPress project. Rules:
+- Only propose preventive measures that DON'T ALREADY EXIST in the system
+- If the failure was caused by a permission error, GitHub API limitation, or transient issue — respond with SKIP
+- If a guard already exists for this failure type (File Guard, Branch Guard, Safety circuit breaker) — respond with SKIP
+- Be specific about the technical root cause, not a restatement of the error message`,
                 }, {
                   role: 'user',
-                  content: `Analyze this failure and propose ONE specific preventive improvement.\n\nFailure:\n${failureContext.substring(0, 2000)}\n\nRespond with:\nROOT_CAUSE: (one sentence)\nPREVENTION: (one sentence describing the fix)\nTITLE: (short issue title, no prefix)`,
+                  content: `Analyze this failure. If the existing system already handles it or it's a transient error, respond with exactly: SKIP\n\nOtherwise propose ONE preventive improvement.\n\nFailure:\n${failureContext.substring(0, 2000)}\n\nRespond with:\nSKIP (if already handled or transient)\nor:\nROOT_CAUSE: (specific technical cause)\nPREVENTION: (specific fix that doesn't duplicate existing guards)\nTITLE: (short issue title)`,
                 }],
                 max_tokens: 300,
                 temperature: 0.3,
@@ -128,9 +132,20 @@ jobs:
             const result = await analysisRes.json();
             const analysis = result.choices?.[0]?.message?.content || '';
 
-            const rootCause = analysis.match(/ROOT_CAUSE:\s*(.+)/)?.[1]?.trim() || 'Unknown';
-            const prevention = analysis.match(/PREVENTION:\s*(.+)/)?.[1]?.trim() || 'Review needed';
-            const title = analysis.match(/TITLE:\s*(.+)/)?.[1]?.trim() || `Review failure: ${failureTitle}`;
+            // Skip if the model determined it's already handled or transient
+            if (analysis.includes('SKIP')) {
+              core.info('Failure already handled by existing system or transient. Skipping.');
+              return;
+            }
+
+            const rootCause = analysis.match(/ROOT_CAUSE:\s*(.+)/)?.[1]?.trim();
+            const prevention = analysis.match(/PREVENTION:\s*(.+)/)?.[1]?.trim();
+            const title = analysis.match(/TITLE:\s*(.+)/)?.[1]?.trim();
+
+            if (!rootCause || !prevention || !title) {
+              core.info('Could not parse failure analysis. Skipping.');
+              return;
+            }
 
             // Check for duplicate
             const { data: existingIssues } = await github.rest.issues.listForRepo({
