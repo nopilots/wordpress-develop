@@ -168,6 +168,25 @@ jobs:
 
             core.info(`Cross-system gaps found: ${gaps.length}`);
 
+            // Agent performance tracking
+            const agentPerformance = [];
+            const agentPrefixes = ['claude/', 'copilot/', 'codex/', 'agent/'];
+            for (const prefix of agentPrefixes) {
+              const agentName = prefix.replace('/', '');
+              const agentMerged = mergedPRs.filter(pr => pr.head?.ref?.startsWith(prefix));
+              const agentRejected = unmergedPRs.filter(pr => pr.head?.ref?.startsWith(prefix));
+              const total = agentMerged.length + agentRejected.length;
+              if (total > 0) {
+                const rate = Math.round((agentMerged.length / total) * 100);
+                agentPerformance.push({
+                  name: agentName,
+                  merged: agentMerged.length,
+                  rejected: agentRejected.length,
+                  rate,
+                });
+              }
+            }
+
             // Build context
             const context_data = [
               `## Metrics (past 14 days)`,
@@ -176,6 +195,11 @@ jobs:
               `Safety incidents: ${recentHalts.length}`,
               `Rejected by triage: ${rejectedIssues.length}`,
               `Backlog: ${readyIssues.length} ready issues`,
+              '',
+              `## Agent performance`,
+              agentPerformance.length > 0
+                ? agentPerformance.map(a => `- ${a.name}: ${a.merged} merged, ${a.rejected} rejected (${a.rate}% approval)`).join('\n')
+                : 'No agent activity in this period.',
               '',
               `## Cross-system gaps`,
               gaps.length > 0 ? gaps.map(g => `- ${g}`).join('\n') : 'None detected.',
@@ -223,6 +247,9 @@ ACTIONS:
 - GOVERNANCE_AMENDMENT: {what to change}
 - PRIORITY_SHIFT: #{issue_number} {high or low}
 - SYSTEM_FIX: {describe the broken connection between workflows}
+- AGENT_FEEDBACK: {agent name}: {specific positive reinforcement or constructive guidance}
+
+For AGENT_FEEDBACK: recognize improvement ("claude's approval rate improved from 60% to 85%"), acknowledge consistency ("codex has maintained 100% approval — strong work"), or offer guidance ("copilot's readability scores are lowest — focus on clearer naming"). Be specific. Reference actual numbers. No generic praise.
 - NO_ACTION: {reason}`,
                 }, {
                   role: 'user',
@@ -313,6 +340,67 @@ ACTIONS:
                   ].join('\n'),
                   labels: ['agent', 'type:governance', 'status:triage'],
                 });
+              }
+            }
+
+            // Deliver agent feedback on their most recent PRs
+            const feedbackMatches = assessment.matchAll(/AGENT_FEEDBACK:\s*(\w+):\s*(.+)/g);
+            for (const match of feedbackMatches) {
+              const agentName = match[1];
+              const feedback = match[2].trim();
+              // Find the agent's most recent merged PR
+              const agentPR = mergedPRs.find(pr =>
+                pr.head?.ref?.startsWith(`${agentName}/`)
+              );
+              if (agentPR) {
+                await github.rest.issues.createComment({
+                  owner, repo,
+                  issue_number: agentPR.number,
+                  body: `**Executive Review**\n\n${feedback}`,
+                });
+                core.info(`Delivered feedback to ${agentName} on PR #${agentPR.number}.`);
+              }
+            }
+
+            // Check for worker support requests — issues labeled "needs-support"
+            const { data: supportRequests } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'needs-support', per_page: 10,
+            });
+            for (const request of supportRequests) {
+              // Executive responds with guidance
+              const supportRes = await fetch('https://models.github.ai/inference/chat/completions', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${process.env.GITHUB_TOKEN}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  model: ['openai/gpt-4o-mini', 'anthropic/claude-haiku'][new Date().getHours() % 2],
+                  messages: [{
+                    role: 'system',
+                    content: 'You are a supportive engineering leader. An agent on your team flagged that they need help. Read their request, provide specific actionable guidance, and encourage them. Be genuine, not generic. Reference the specific problem they described.',
+                  }, {
+                    role: 'user',
+                    content: `Support request: ${request.title}\n\n${(request.body || '').substring(0, 1000)}`,
+                  }],
+                  max_tokens: 300,
+                  temperature: 0.5,
+                }),
+              });
+              if (supportRes.ok) {
+                const supportResult = await supportRes.json();
+                const guidance = supportResult.choices?.[0]?.message?.content;
+                if (guidance) {
+                  await github.rest.issues.createComment({
+                    owner, repo,
+                    issue_number: request.number,
+                    body: `**Executive Support**\n\n${guidance}`,
+                  });
+                  await github.rest.issues.removeLabel({
+                    owner, repo, issue_number: request.number, name: 'needs-support',
+                  }).catch(() => {});
+                  core.info(`Provided support on #${request.number}.`);
+                }
               }
             }
 

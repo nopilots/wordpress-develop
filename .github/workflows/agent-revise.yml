@@ -64,6 +64,22 @@ jobs:
 
               core.info(`Closed PR #${pr.number} after ${revisionCount} failed revisions.`);
 
+              // Flag for Executive support — agent struggled with this task
+              await github.rest.issues.create({
+                owner, repo,
+                title: `Support needed: ${pr.title}`,
+                body: [
+                  `An agent's PR was closed after ${revisionCount} failed revision attempts.`,
+                  '',
+                  `**PR:** ${pr.html_url}`,
+                  `**Agent:** ${pr.user?.login || 'unknown'}`,
+                  `**Review feedback:** ${review.body || 'No details.'}`,
+                  '',
+                  `The agent may need guidance on the approach or the review criteria may need clarification.`,
+                ].join('\n'),
+                labels: ['agent', 'needs-support'],
+              });
+
               // Export Flight Log content for composite action
               const postContent = `<p><a href="${pr.html_url}">PR #${pr.number}</a> was closed after ${revisionCount} revision attempts. The approach needs rethinking.</p>\n<h2>Review Feedback</h2>\n<p>${review.body || 'No details.'}</p>`;
               core.exportVariable('FLIGHT_LOG_TITLE', pr.title);
