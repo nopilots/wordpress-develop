@@ -4081,10 +4081,35 @@ class WP_HTML_Tag_Processor {
 			case 'speculationrules':
 				return 'json';
 
-			/** @todo Rely on a full MIME parser for determining JSON content. */
-			case 'application/json':
-			case 'text/json':
+		}
+
+		/*
+		 * Use MIME type parsing to recognize JSON, including structured syntax suffixes
+		 * and optional parameters (for example, application/ld+json; charset=utf-8).
+		 */
+		$json_mime_type = $type_string;
+
+		if ( str_contains( $json_mime_type, ';' ) ) {
+			list( $json_mime_type ) = explode( ';', $json_mime_type, 2 );
+			$json_mime_type         = trim( $json_mime_type );
+		}
+
+		if ( wp_is_json_media_type( $json_mime_type ) ) {
+			return 'json';
+		}
+
+		if (
+			preg_match(
+				'/^(?<type>[a-z0-9][a-z0-9!#$&^_.+-]*)\/(?<subtype>[a-z0-9][a-z0-9!#$&^_.+-]*)$/',
+				$json_mime_type,
+				$mime_type
+			)
+		) {
+			$subtype = $mime_type['subtype'];
+
+			if ( 'json' === $subtype || str_ends_with( $subtype, '+json' ) ) {
 				return 'json';
+			}
 		}
 
 		/*
