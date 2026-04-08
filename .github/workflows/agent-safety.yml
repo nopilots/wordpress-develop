@@ -51,7 +51,7 @@ jobs:
             const stale = issues
               .filter(i =>
                 i.labels.some(l => l.name === 'status:in-progress') &&
-                (Date.now() - new Date(i.created_at)) > 24 * 60 * 60 * 1000
+                (Date.now() - new Date(i.created_at)) > 6 * 60 * 60 * 1000
               )
               .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
               .slice(0, 3);

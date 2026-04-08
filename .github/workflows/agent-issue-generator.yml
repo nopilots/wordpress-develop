@@ -143,7 +143,7 @@ jobs:
 
             // Auto-close stale planning issues >7 days old
             for (const issue of existing) {
-              if (Date.now() - new Date(issue.updated_at) > 24 * 60 * 60 * 1000) {
+              if (Date.now() - new Date(issue.updated_at) > 6 * 60 * 60 * 1000) {
                 await github.rest.issues.update({
                   owner, repo, issue_number: issue.number,
                   state: 'closed', state_reason: 'not_planned',
@@ -153,7 +153,7 @@ jobs:
             }
 
             const stillOpen = existing.filter(i =>
-              Date.now() - new Date(i.updated_at) <= 24 * 60 * 60 * 1000
+              Date.now() - new Date(i.updated_at) <= 6 * 60 * 60 * 1000
             );
             if (stillOpen.length > 0) {
               core.info('Planning issue already open. Skipping.');
@@ -191,11 +191,11 @@ jobs:
               owner, repo,
               title: `Weekly planning: propose next improvements`,
               body: [
-                `You are a WordPress core contributor planning the next batch of work.`,
+                `You are a principal WordPress core contributor planning ambitious work for an autonomous team.`,
                 '',
                 `## Context`,
                 '',
-                `Read \`GOVERNANCE.md\` for project principles and guardrails.`,
+                `Read \`GOVERNANCE.md\` — especially the Agent-Determined section. These blanks are yours to fill.`,
                 '',
                 `### Recently merged`,
                 merged || '_None yet._',
@@ -205,23 +205,29 @@ jobs:
                 '',
                 `## Task`,
                 '',
-                `1. Review the WordPress codebase in this repository`,
-                `2. Identify 3 well-scoped improvements that align with WordPress principles`,
-                `3. Create a separate GitHub issue for each, with:`,
-                `   - Clear description of the problem or improvement`,
-                `   - Which files are involved`,
-                `   - What tests should cover`,
-                `4. Label each new issue \`agent\` and \`status:ready\``,
-                `5. Close this planning issue when done`,
+                `Propose 3 improvements. At least one must be **hard** — something that tests the governance model:`,
                 '',
-                `## What makes a good issue`,
+                `- A performance improvement that needs benchmarking (governance has no performance standard yet)`,
+                `- A deprecation path for outdated code (requires backwards compatibility decision)`,
+                `- Security hardening that goes beyond fixing a TODO`,
+                `- Test coverage for a complex, untested core function`,
+                `- An API design improvement that should go through RFC discussion first`,
                 '',
-                `- Improves WordPress without breaking backwards compatibility`,
-                `- Can be verified with tests`,
-                `- Follows the guardrails in GOVERNANCE.md`,
-                `- Considers: test coverage gaps, code quality, performance, accessibility, security hardening, documentation`,
+                `For each improvement, create a separate GitHub issue with:`,
+                `- Clear problem statement`,
+                `- Which files are involved`,
+                `- What tests should cover`,
+                `- Whether it needs an RFC (label \`type:rfc\`) or can proceed directly`,
+                '',
+                `Label each issue \`agent\` and \`status:triage\`.`,
+                '',
+                `## Governance challenge`,
+                '',
+                `Review the Agent-Determined section of GOVERNANCE.md. Pick ONE undefined area where you now have enough experience to propose a policy. Create an RFC issue (\`type:rfc\`) with your proposal.`,
+                '',
+                `Close this planning issue when done.`,
               ].join('\n'),
-              labels: ['agent', 'type:planning', 'status:ready'],
+              labels: ['agent', 'type:planning', 'status:triage'],
             });
 
             core.info('Created weekly planning issue.');

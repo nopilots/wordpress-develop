@@ -44,7 +44,7 @@ jobs:
 
             // Auto-close and unpin stale reflection issues
             for (const issue of existing) {
-              if (Date.now() - new Date(issue.updated_at) > 24 * 60 * 60 * 1000) {
+              if (Date.now() - new Date(issue.updated_at) > 6 * 60 * 60 * 1000) {
                 // Unpin before closing
                 try {
                   await github.graphql(`
@@ -61,7 +61,7 @@ jobs:
             }
 
             const stillOpen = existing.filter(i =>
-              Date.now() - new Date(i.updated_at) <= 24 * 60 * 60 * 1000
+              Date.now() - new Date(i.updated_at) <= 6 * 60 * 60 * 1000
             );
             if (stillOpen.length > 0) {
               core.info('Reflection issue already open.');
@@ -69,7 +69,7 @@ jobs:
             }
 
             // Gather data from the past week
-            const oneWeekAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+            const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
             // Merged PRs
             const { data: closedPRs } = await github.rest.pulls.list({

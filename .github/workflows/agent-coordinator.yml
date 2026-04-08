@@ -91,11 +91,15 @@ jobs:
             const actors = actorsResult?.repository?.suggestedActors?.nodes || [];
             core.info(`Assignable actors: ${actors.map(a => a.login).filter(Boolean).join(', ')}`);
 
-            // Priority order: anthropic, openai, copilot
-            const agent =
-              actors.find(a => a.login === 'anthropic-code-agent') ||
-              actors.find(a => a.login === 'openai-code-agent') ||
-              actors.find(a => a.login === 'copilot-swe-agent');
+            // Round-robin across available coding agents
+            const codingAgents = actors.filter(a =>
+              ['anthropic-code-agent', 'openai-code-agent', 'copilot-swe-agent'].includes(a.login)
+            );
+            // Use current hour as rotation index for simple round-robin
+            const rotationIndex = new Date().getHours();
+            const agent = codingAgents.length > 0
+              ? codingAgents[rotationIndex % codingAgents.length]
+              : null;
 
             if (!agent) {
               const { data: botIssues } = await github.rest.issues.listForRepo({
