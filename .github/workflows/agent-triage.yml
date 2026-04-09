@@ -105,15 +105,15 @@ REASON: one sentence`,
             });
 
             if (!triageRes.ok) {
-              core.warning('Models API unavailable — approving by default.');
-              await github.rest.issues.removeLabel({ owner, repo, issue_number: issueNumber, name: 'status:triage' }).catch(() => {});
-              await github.rest.issues.addLabels({ owner, repo, issue_number: issueNumber, labels: ['status:ready'] });
+              core.warning('Models API unavailable — holding issue for retry.');
               return;
             }
 
             const result = await triageRes.json();
             const response = result.choices?.[0]?.message?.content || '';
-            const verdict = response.includes('APPROVE') ? 'APPROVE' : 'REJECT';
+            // Match APPROVE only as the verdict value, not as a substring of other words
+            const verdictMatch = response.match(/VERDICT:\s*(APPROVE|REJECT)/i);
+            const verdict = verdictMatch?.[1]?.toUpperCase() === 'APPROVE' ? 'APPROVE' : 'REJECT';
             const reason = response.match(/REASON:\s*(.+)/)?.[1]?.trim() || 'No reason provided.';
 
             if (verdict === 'APPROVE') {

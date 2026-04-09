@@ -15,7 +15,7 @@ permissions:
 
 concurrency:
   group: agent-safety
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   safety-check:
@@ -206,4 +206,37 @@ jobs:
               }
 
               core.setFailed(`Safety halt: ${reasons.join('; ')}`);
+
+              // Auto-escalate to system:off if multiple halt conditions persist
+              const { data: allHaltIssues } = await github.rest.issues.listForRepo({
+                owner, repo, state: 'open', labels: 'safety:halt', per_page: 20,
+              });
+              const haltCount = allHaltIssues.filter(i => i.title.startsWith('[SAFETY]')).length;
+              if (haltCount >= 3) {
+                const { data: sysOff } = await github.rest.issues.listForRepo({
+                  owner, repo, state: 'open', labels: 'system:off', per_page: 1,
+                });
+                if (sysOff.length === 0) {
+                  const { data: offIssue } = await github.rest.issues.create({
+                    owner, repo,
+                    title: '[SAFETY] System kill switch activated',
+                    body: [
+                      '## Automatic Escalation',
+                      '',
+                      `${haltCount} concurrent safety halt issues detected. System has been shut down.`,
+                      '',
+                      'A human must review and close this issue to re-enable the system.',
+                      '',
+                      ...reasons.map(r => `- ${r}`),
+                    ].join('\n'),
+                    labels: ['system:off', 'safety:halt', 'agent'],
+                  });
+                  try {
+                    await github.graphql(`
+                      mutation($id: ID!) { pinIssue(input: { issueId: $id }) { issue { id } } }
+                    `, { id: offIssue.node_id });
+                  } catch (e) { /* max 3 pinned */ }
+                  core.error('ESCALATED: system:off kill switch activated due to multiple concurrent halts.');
+                }
+              }
             }

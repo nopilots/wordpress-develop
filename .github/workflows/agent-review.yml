@@ -142,10 +142,11 @@ jobs:
               return;
             }
 
-            // Truncate diff to fit free tier token limits (~8K tokens = ~4K chars for diff after prompt overhead)
-            const maxDiff = 4000;
-            const truncatedDiff = diff.length > maxDiff
-              ? diff.substring(0, maxDiff) + '\n... (diff truncated)'
+            // Truncate diff to fit token limits
+            const maxDiff = 12000;
+            const wasTruncated = diff.length > maxDiff;
+            const truncatedDiff = wasTruncated
+              ? diff.substring(0, maxDiff) + `\n... (diff truncated — ${diff.length - maxDiff} chars unreviewed)`
               : diff;
 
             const prContext = [
@@ -294,12 +295,13 @@ jobs:
               '',
               pr.body || 'No description.',
               '',
+              wasTruncated ? `**Warning:** The diff was truncated. ${diff.length - maxDiff} characters were not reviewed by Doc or Dalton.\n` : '',
               '## Doc (Code Quality)',
               docSummary,
               '',
               '## Dalton (Security)',
               daltonSummary,
-            ].join('\n');
+            ].filter(Boolean).join('\n');
 
             const patReview = await askModel(patPrompt, `Read the reviews from Doc and Dalton. Make your final decision on this PR.\n\n${patContext}`);
 

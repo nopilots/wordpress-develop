@@ -220,7 +220,47 @@ jobs:
                 core.warning(`Blog audit failed: ${e.message}`);
               }
 
-            // 5. Check COPILOT_PAT is valid
+            // 5. Workflow inventory — detect system growth
+            try {
+              const { data: tree } = await github.rest.git.getTree({
+                owner, repo,
+                tree_sha: 'autopilot',
+                recursive: 'true',
+              });
+              const agentWorkflows = tree.tree
+                .filter(f => f.path.startsWith('.github/workflows/agent-') && f.path.endsWith('.yml'))
+                .map(f => f.path.replace('.github/workflows/', ''));
+              core.info(`Agent workflows (${agentWorkflows.length}): ${agentWorkflows.join(', ')}`);
+
+              // Check against known count from last run via issue body
+              const { data: inventoryIssues } = await github.rest.issues.listForRepo({
+                owner, repo, state: 'open', per_page: 50,
+              });
+              const lastInventory = inventoryIssues.find(i => i.title === '[Health Check] Workflow inventory');
+              const lastCount = lastInventory?.body?.match(/Count: (\d+)/)?.[1];
+
+              if (lastCount && parseInt(lastCount) !== agentWorkflows.length) {
+                const delta = agentWorkflows.length - parseInt(lastCount);
+                core.warning(`Workflow count changed: ${lastCount} → ${agentWorkflows.length} (${delta > 0 ? '+' : ''}${delta})`);
+                if (lastInventory) {
+                  await github.rest.issues.update({
+                    owner, repo, issue_number: lastInventory.number,
+                    body: `Count: ${agentWorkflows.length}\nWorkflows: ${agentWorkflows.join(', ')}\nLast change: ${new Date().toISOString()} (${delta > 0 ? '+' : ''}${delta})`,
+                  });
+                }
+              } else if (!lastInventory) {
+                await github.rest.issues.create({
+                  owner, repo,
+                  title: '[Health Check] Workflow inventory',
+                  body: `Count: ${agentWorkflows.length}\nWorkflows: ${agentWorkflows.join(', ')}\nCreated: ${new Date().toISOString()}`,
+                  labels: ['agent'],
+                });
+              }
+            } catch (e) {
+              core.warning(`Workflow inventory check failed: ${e.message}`);
+            }
+
+            // 6. Check COPILOT_PAT is valid
             if (!process.env.COPILOT_PAT) {
               failures.push('COPILOT_PAT secret is not set.');
             } else {
