@@ -116,6 +116,8 @@ Branch prefixes recognized: `agent/`, `copilot/`, `claude/`, `codex/`
 | Flight Log | `log` | Merged work. AI-generated summary of what shipped. |
 | Course Correction | `corrections` | Abandoned approach. PR closed after failed revisions. |
 | Changelog | `changelog` | Upstream sync. WordPress version bump detected. |
+| Executive | `executive` | Weekly strategic assessment from the Executive workflow. |
+| Alerts | `alerts` | Sticky posts for needs:human intervention. Auto-deleted when resolved. |
 
 ### Users
 

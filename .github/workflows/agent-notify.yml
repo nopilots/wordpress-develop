@@ -1,0 +1,151 @@
+name: Notify Human
+
+on:
+  issues:
+    types: [labeled, unlabeled, closed]
+
+permissions:
+  issues: write
+
+jobs:
+  sticky-post:
+    runs-on: ubuntu-latest
+    if: >
+      (github.event.action == 'labeled' && github.event.label.name == 'needs:human') ||
+      (github.event.action == 'unlabeled' && github.event.label.name == 'needs:human') ||
+      (github.event.action == 'closed' && contains(toJSON(github.event.issue.labels.*.name), 'needs:human'))
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Publish or remove sticky alert on Flight Log
+        uses: actions/github-script@v7
+        env:
+          WP_URL: ${{ secrets.WP_URL }}
+          WP_AUTH: ${{ secrets.WP_AUTH }}
+        with:
+          script: |
+            const wpUrl = process.env.WP_URL;
+            const wpAuth = process.env.WP_AUTH;
+            if (!wpUrl || !wpAuth) {
+              core.warning('WP_URL or WP_AUTH not set. Skipping.');
+              return;
+            }
+
+            const wpGraphQL = async (query, variables = {}) => {
+              const res = await fetch(`${wpUrl}/graphql`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ query, variables }),
+              });
+              if (!res.ok) throw new Error(`WPGraphQL HTTP ${res.status}`);
+              const json = await res.json();
+              if (json.errors) throw new Error(json.errors[0].message);
+              return json.data;
+            };
+
+            const issue = context.payload.issue;
+            const action = context.payload.action;
+            const label = context.payload.label;
+
+            if (action === 'labeled' && label?.name === 'needs:human') {
+              // Create a sticky alert post
+              const body = issue.body || '';
+              const whatStuck = body.match(/## What is stuck\n([\s\S]*?)(?=\n## |$)/)?.[1]?.trim() || '';
+              const whatToDo = body.match(/## What a human should do\n([\s\S]*?)(?=\n## |$)/)?.[1]?.trim() || '';
+
+              const content = [
+                `<p><strong>Human intervention needed.</strong></p>`,
+                `<p><a href="${issue.html_url}">View issue #${issue.number} on GitHub →</a></p>`,
+                whatStuck ? `<h2>What is stuck</h2><p>${whatStuck.replace(/\n/g, '<br>')}</p>` : '',
+                whatToDo ? `<h2>What to do</h2><p>${whatToDo.replace(/\n/g, '<br>')}</p>` : '',
+              ].filter(Boolean).join('\n');
+
+              try {
+                // Look up alerts category
+                const catResult = await wpGraphQL(
+                  `query($slug: [String]) { categories(where: { slug: $slug }) { nodes { id } } }`,
+                  { slug: ['alerts'] }
+                );
+                const categoryId = catResult.categories?.nodes?.[0]?.id || null;
+
+                const postData = await wpGraphQL(
+                  `mutation($title: String!, $content: String!, $status: PostStatusEnum!, $isSticky: Boolean, $categories: PostCategoriesInput) {
+                    createPost(input: { title: $title, content: $content, status: $status, isSticky: $isSticky, categories: $categories }) {
+                      post { id databaseId link }
+                    }
+                  }`,
+                  {
+                    title: issue.title,
+                    content,
+                    status: 'PUBLISH',
+                    isSticky: true,
+                    ...(categoryId && { categories: { append: true, nodes: [{ id: categoryId }] } }),
+                  }
+                );
+
+                // Store the WP post ID on the GitHub issue so we can delete it later
+                const wpPostId = postData.createPost.post.databaseId;
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  body: `<!-- wp-alert-post:${wpPostId} -->Sticky alert published to [Flight Log](${postData.createPost.post.link}).`,
+                });
+                core.info(`Sticky alert published (WP post ${wpPostId}): ${issue.title}`);
+              } catch (e) {
+                core.warning(`Failed to publish sticky alert: ${e.message}`);
+              }
+            }
+
+            if (action === 'unlabeled' || action === 'closed') {
+              // Find the WP post ID from the issue comments
+              try {
+                const { data: comments } = await github.rest.issues.listComments({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  per_page: 50,
+                });
+                const marker = comments.find(c => c.body?.includes('<!-- wp-alert-post:'));
+                if (!marker) {
+                  core.info('No sticky alert post to remove.');
+                  return;
+                }
+                const wpPostId = marker.body.match(/<!-- wp-alert-post:(\d+) -->/)?.[1];
+                if (!wpPostId) return;
+
+                // Delete the WordPress post by database ID
+                const globalId = Buffer.from(`post:${wpPostId}`).toString('base64');
+                await wpGraphQL(
+                  `mutation($id: ID!) {
+                    deletePost(input: { id: $id, forceDelete: true }) { post { id } }
+                  }`,
+                  { id: globalId }
+                );
+                core.info(`Deleted sticky alert (WP post ${wpPostId}): ${issue.title}`);
+              } catch (e) {
+                core.warning(`Failed to remove sticky alert: ${e.message}`);
+              }
+            }
+
+  unpin-closed:
+    runs-on: ubuntu-latest
+    if: github.event.action == 'closed'
+    steps:
+      - name: Unpin issue if pinned
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              await github.graphql(`
+                mutation($id: ID!) { unpinIssue(input: { issueId: $id }) { issue { id } } }
+              `, { id: context.payload.issue.node_id });
+              core.info(`Unpinned issue #${context.payload.issue.number}`);
+            } catch (e) {
+              // Not pinned or already unpinned — that's fine
+              core.info(`Issue #${context.payload.issue.number} was not pinned.`);
+            }

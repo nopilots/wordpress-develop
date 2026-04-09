@@ -34,6 +34,10 @@ inputs:
     description: Skip the post refinement step
     required: false
     default: 'false'
+  is-sticky:
+    description: Pin post to top of blog (WordPress sticky post)
+    required: false
+    default: 'false'
 
 outputs:
   post-id:
@@ -60,6 +64,7 @@ runs:
         POST_EXCERPT: ${{ inputs.excerpt }}
         AUTHOR_SLUG: ${{ inputs.author-slug }}
         SKIP_REFINEMENT: ${{ inputs.skip-refinement }}
+        IS_STICKY: ${{ inputs.is-sticky }}
       with:
         script: |
           const wpUrl = process.env.WP_URL;
@@ -130,17 +135,19 @@ runs:
           if (!categoryId) core.warning(`Category "${slug}" not found — publishing without category.`);
 
           // Publish (with author fallback)
+          const isSticky = process.env.IS_STICKY === 'true';
           const postVars = {
             title: process.env.POST_TITLE,
             content: process.env.POST_CONTENT,
             excerpt: process.env.POST_EXCERPT,
             status: 'PUBLISH',
+            isSticky,
             ...(categoryId && { categories: { append: true, nodes: [{ id: categoryId }] } }),
             ...(authorId && { authorId }),
           };
 
-          const mutation = `mutation CreatePost($title: String!, $content: String!, $excerpt: String, $status: PostStatusEnum!, $categories: PostCategoriesInput, $authorId: ID) {
-            createPost(input: { title: $title, content: $content, excerpt: $excerpt, status: $status, categories: $categories, authorId: $authorId }) {
+          const mutation = `mutation CreatePost($title: String!, $content: String!, $excerpt: String, $status: PostStatusEnum!, $categories: PostCategoriesInput, $authorId: ID, $isSticky: Boolean) {
+            createPost(input: { title: $title, content: $content, excerpt: $excerpt, status: $status, categories: $categories, authorId: $authorId, isSticky: $isSticky }) {
               post { id uri link }
             }
           }`;

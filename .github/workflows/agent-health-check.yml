@@ -66,6 +66,7 @@ jobs:
                 'corrections',
                 'changelog',
                 'executive',
+                'alerts',
               ];
 
               try {
