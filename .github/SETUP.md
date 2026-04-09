@@ -60,7 +60,6 @@ Each app needs:
 | `PAT_PRIVATE_KEY` | nopilots-pat GitHub App private key |
 | `WP_URL` | WordPress site URL (e.g., https://nopilots.org) |
 | `WP_AUTH` | WordPress application password (format: `username:password`) |
-| `NTFY_TOPIC` | ntfy push notification URL (e.g., `https://ntfy.sh/your-private-topic`). Optional — if not set, notifications are skipped. |
 
 ## Labels
 
