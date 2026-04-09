@@ -48,13 +48,18 @@ jobs:
             const authorizedList = (process.env.AUTHORIZED_USERS || '')
               .split(',').map(u => u.trim().toLowerCase()).filter(Boolean);
 
-            let authorized = false;
-            if (authorizedList.length > 0) {
-              authorized = authorizedList.includes(sender.toLowerCase());
-            } else {
-              // No list configured — only repo/org owner can command
-              authorized = sender.toLowerCase() === owner.toLowerCase();
+            if (authorizedList.length === 0) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issue.number,
+                body: 'UNABLE. COMMANDER_AUTHORIZED_USERS variable not configured. Set it in repo settings.',
+              });
+              await github.rest.issues.update({
+                owner, repo, issue_number: issue.number,
+                state: 'closed', state_reason: 'not_planned',
+              });
+              return;
             }
+            const authorized = authorizedList.includes(sender.toLowerCase());
 
             if (!authorized) {
               await github.rest.issues.createComment({
@@ -244,6 +249,25 @@ jobs:
                 actions.push(`Closed ${issues.length} issues with label \`${label}\``);
               }
 
+              // Bare number fallback: [CANCEL] #60
+              const bareMatch = commandText.match(/^#?(\d+)$/);
+              if (bareMatch && actions.length === 0) {
+                const n = parseInt(bareMatch[1]);
+                try {
+                  // Try closing as PR first, fall back to issue
+                  try {
+                    await github.rest.pulls.update({ owner, repo, pull_number: n, state: 'closed' });
+                    actions.push(`Closed PR #${n}`);
+                  } catch {
+                    await github.rest.issues.update({
+                      owner, repo, issue_number: n,
+                      state: 'closed', state_reason: 'not_planned',
+                    });
+                    actions.push(`Closed #${n}`);
+                  }
+                } catch (e) { actions.push(`UNABLE close #${n}: ${e.message}`); }
+              }
+
               if (actions.length === 0) actions.push('UNABLE. No actionable parse.');
               const ok = actions.every(a => !a.startsWith('UNABLE'));
               await respond(`${ok ? 'WILCO' : 'UNABLE'}.\n\nInstruments:\n${actions.map(a => `- ${a}`).join('\n')}`);
@@ -322,11 +346,13 @@ ${state.prs.map(p => `#${p.number} "${p.title}" [${p.labels.join(', ')}] ${p.bra
 
             // Safety: cap actions, validate targets, block recursive triggers
             planned = planned.slice(0, 10);
-            const validIssueNums = new Set(state.issues.map(i => i.number));
-            const validPRNums = new Set(state.prs.map(p => p.number));
+            const validNums = new Set([
+              ...state.issues.map(i => i.number),
+              ...state.prs.map(p => p.number),
+            ]);
             planned = planned.filter(step => {
-              if (step.issue && !validIssueNums.has(step.issue)) return false;
-              if (step.pr && !validPRNums.has(step.pr)) return false;
+              if (step.issue && !validNums.has(step.issue)) return false;
+              if (step.pr && !validNums.has(step.pr)) return false;
               if (step.action === 'create_issue' && /^\[(DIRECT|HOLD|EXEC|CANCEL|STATUS|AMEND)\]/i.test(step.title)) return false;
               return true;
             });
