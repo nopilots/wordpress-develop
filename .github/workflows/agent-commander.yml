@@ -1,0 +1,379 @@
+name: Commander
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+  pull-requests: write
+  contents: read
+  models: read
+  actions: write
+
+concurrency:
+  group: agent-commander
+  cancel-in-progress: false
+
+jobs:
+  execute:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Process command
+        uses: actions/github-script@v7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AUTHORIZED_USERS: ${{ vars.COMMANDER_AUTHORIZED_USERS }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issue = context.payload.issue;
+            const actor = context.actor;
+
+            // --- Parse prefix ---
+            const prefixMatch = issue.title.match(/^\[(DIRECT|HOLD|EXEC|CANCEL|STATUS|AMEND)\]\s*(.*)/i);
+            if (!prefixMatch) return;
+
+            const prefix = prefixMatch[1].toUpperCase();
+            const commandText = prefixMatch[2].trim();
+            const commandBody = issue.body || '';
+            const sender = context.payload.sender?.login || actor;
+
+            // --- Authenticate (before any labeling or action) ---
+            const authorizedList = (process.env.AUTHORIZED_USERS || '')
+              .split(',').map(u => u.trim().toLowerCase()).filter(Boolean);
+
+            let authorized = false;
+            if (authorizedList.length > 0) {
+              authorized = authorizedList.includes(sender.toLowerCase());
+            } else {
+              // No list configured — only repo/org owner can command
+              authorized = sender.toLowerCase() === owner.toLowerCase();
+            }
+
+            if (!authorized) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issue.number,
+                body: `UNABLE. Actor \`${sender}\` not authorized. Transmission rejected.`,
+              });
+              await github.rest.issues.update({
+                owner, repo, issue_number: issue.number,
+                state: 'closed', state_reason: 'not_planned',
+              });
+              return;
+            }
+
+            // --- Label as commander issue (after auth) ---
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: 'commander' });
+            } catch {
+              await github.rest.issues.createLabel({
+                owner, repo, name: 'commander', color: '000000',
+                description: 'Owner command',
+              });
+            }
+            await github.rest.issues.addLabels({
+              owner, repo, issue_number: issue.number, labels: ['commander'],
+            });
+
+            // --- Kill switch ---
+            const { data: killSwitch } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'system:off', per_page: 1,
+            });
+            if (killSwitch.length > 0) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issue.number,
+                body: 'UNABLE. System OFF. Kill switch active. Resolve `system:off` first.',
+              });
+              await github.rest.issues.update({
+                owner, repo, issue_number: issue.number,
+                state: 'closed', state_reason: 'not_planned',
+              });
+              return;
+            }
+
+            // --- Helpers ---
+            const respond = async (body) => {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issue.number,
+                body: body + '\n\nEnd transmission.',
+              });
+              await github.rest.issues.update({
+                owner, repo, issue_number: issue.number,
+                state: 'closed', state_reason: 'completed',
+              });
+            };
+
+            const gatherState = async () => {
+              const [{ data: issues }, { data: prs }, { data: runs }] = await Promise.all([
+                github.rest.issues.listForRepo({ owner, repo, state: 'open', per_page: 100 }),
+                github.rest.pulls.list({ owner, repo, state: 'open', per_page: 50 }),
+                github.rest.actions.listWorkflowRunsForRepo({ owner, repo, per_page: 30 }),
+              ]);
+              return {
+                issues: issues.filter(i => !i.pull_request).map(i => ({
+                  number: i.number, title: i.title,
+                  labels: i.labels.map(l => l.name),
+                })),
+                prs: prs.map(pr => ({
+                  number: pr.number, title: pr.title,
+                  draft: pr.draft, labels: pr.labels.map(l => l.name),
+                  branch: pr.head.ref,
+                })),
+                runs: runs.workflow_runs.slice(0, 20).map(r => ({
+                  name: r.name, conclusion: r.conclusion,
+                })),
+              };
+            };
+
+            // ========== STATUS ==========
+            if (prefix === 'STATUS') {
+              const s = await gatherState();
+              const ready = s.issues.filter(i => i.labels.includes('status:ready'));
+              const inProg = s.issues.filter(i => i.labels.includes('status:in-progress'));
+              const triage = s.issues.filter(i => i.labels.includes('status:triage'));
+              const human = s.issues.filter(i => i.labels.includes('needs:human'));
+              const halted = s.issues.filter(i => i.labels.includes('safety:halt'));
+              const failed = s.runs.filter(r => r.conclusion === 'failure');
+
+              const lines = [
+                'ROGER. Instruments follow.',
+                '',
+                '```',
+                `ISSUES    open: ${s.issues.length}  ready: ${ready.length}  in-progress: ${inProg.length}  triage: ${triage.length}`,
+                `PRS       open: ${s.prs.length}  draft: ${s.prs.filter(p => p.draft).length}`,
+                `ALERTS    needs:human: ${human.length}  safety:halt: ${halted.length}`,
+                `FAILURES  ${failed.length} in last 30 runs`,
+                '```',
+              ];
+
+              if (human.length > 0) {
+                lines.push('', '**Requires human:**');
+                human.forEach(i => lines.push(`- #${i.number} ${i.title}`));
+              }
+              if (halted.length > 0) {
+                lines.push('', '**Halted:**');
+                halted.forEach(i => lines.push(`- #${i.number} ${i.title}`));
+              }
+
+              await respond(lines.join('\n'));
+              return;
+            }
+
+            // ========== EXEC ==========
+            if (prefix === 'EXEC') {
+              const actions = [];
+
+              const mergeMatch = commandText.match(/merge\s+(?:PR\s*)?#?(\d+)/i);
+              if (mergeMatch) {
+                const n = parseInt(mergeMatch[1]);
+                try {
+                  await github.rest.pulls.merge({ owner, repo, pull_number: n });
+                  actions.push(`Merged PR #${n}`);
+                } catch (e) { actions.push(`UNABLE merge #${n}: ${e.message}`); }
+              }
+
+              const runMatch = commandText.match(/run\s+(.+)/i);
+              if (runMatch && !mergeMatch) {
+                const name = runMatch[1].trim().toLowerCase();
+                try {
+                  const { data: wfs } = await github.rest.actions.listRepoWorkflows({ owner, repo });
+                  const wf = wfs.workflows.find(w =>
+                    w.name.toLowerCase() === name ||
+                    w.path.includes(`agent-${name.replace(/\s+/g, '-')}`)
+                  );
+                  if (wf) {
+                    await github.rest.actions.createWorkflowDispatch({
+                      owner, repo, workflow_id: wf.id, ref: 'autopilot',
+                    });
+                    actions.push(`Dispatched ${wf.name}`);
+                  } else { actions.push(`UNABLE: workflow "${name}" not found`); }
+                } catch (e) { actions.push(`UNABLE dispatch: ${e.message}`); }
+              }
+
+              if (actions.length === 0) actions.push('UNABLE. No actionable parse.');
+              const ok = actions.every(a => !a.startsWith('UNABLE'));
+              await respond(`${ok ? 'WILCO' : 'UNABLE'}.\n\nInstruments:\n${actions.map(a => `- ${a}`).join('\n')}`);
+              return;
+            }
+
+            // ========== CANCEL ==========
+            if (prefix === 'CANCEL') {
+              const actions = [];
+
+              const prMatch = commandText.match(/PR\s*#?(\d+)/i);
+              if (prMatch) {
+                const n = parseInt(prMatch[1]);
+                try {
+                  await github.rest.pulls.update({ owner, repo, pull_number: n, state: 'closed' });
+                  actions.push(`Closed PR #${n}`);
+                } catch (e) { actions.push(`UNABLE close PR #${n}: ${e.message}`); }
+              }
+
+              const issueMatch = commandText.match(/issue\s*#?(\d+)/i);
+              if (issueMatch) {
+                const n = parseInt(issueMatch[1]);
+                try {
+                  await github.rest.issues.update({
+                    owner, repo, issue_number: n,
+                    state: 'closed', state_reason: 'not_planned',
+                  });
+                  actions.push(`Closed issue #${n}`);
+                } catch (e) { actions.push(`UNABLE close #${n}: ${e.message}`); }
+              }
+
+              // "cancel all <label> issues"
+              const allMatch = commandText.match(/all\s+(\S+)\s+issues/i);
+              if (allMatch && !issueMatch) {
+                const label = allMatch[1];
+                const { data: targets } = await github.rest.issues.listForRepo({
+                  owner, repo, state: 'open', labels: label, per_page: 100,
+                });
+                const issues = targets.filter(i => !i.pull_request);
+                for (const t of issues) {
+                  await github.rest.issues.update({
+                    owner, repo, issue_number: t.number,
+                    state: 'closed', state_reason: 'not_planned',
+                  });
+                }
+                actions.push(`Closed ${issues.length} issues with label \`${label}\``);
+              }
+
+              if (actions.length === 0) actions.push('UNABLE. No actionable parse.');
+              const ok = actions.every(a => !a.startsWith('UNABLE'));
+              await respond(`${ok ? 'WILCO' : 'UNABLE'}.\n\nInstruments:\n${actions.map(a => `- ${a}`).join('\n')}`);
+              return;
+            }
+
+            // ========== DIRECT, HOLD, AMEND (LLM-interpreted) ==========
+            const state = await gatherState();
+
+            const systemPrompt = `You are the command interpreter for an autonomous system. The owner issued a command. Translate it into GitHub API actions.
+
+Output a JSON array of actions. No explanation. No markdown fences. Only JSON.
+
+Action types:
+- {"action": "add_label", "issue": <number>, "label": "<name>"}
+- {"action": "remove_label", "issue": <number>, "label": "<name>"}
+- {"action": "close_issue", "issue": <number>}
+- {"action": "comment", "issue": <number>, "body": "<text>"}
+- {"action": "create_issue", "title": "<text>", "body": "<text>", "labels": ["<label>"]}
+- {"action": "close_pr", "pr": <number>}
+
+Rules:
+- HOLD: add label "hold" to matching issues, comment with hold reason
+- DIRECT: add "priority:high" to matching issues, remove "priority:high" from non-matching
+- AMEND: create a single RFC issue with label "type:rfc" proposing the governance change
+- If unable, output: [{"action": "unable", "reason": "<why>"}]
+- Be precise. Only target issues/PRs that match the command.`;
+
+            const userPrompt = `[${prefix}] ${commandText}
+${commandBody ? `\n${commandBody}` : ''}
+
+Open issues:
+${state.issues.slice(0, 30).map(i => `#${i.number} "${i.title}" [${i.labels.join(', ')}]`).join('\n')}
+
+Open PRs:
+${state.prs.map(p => `#${p.number} "${p.title}" [${p.labels.join(', ')}] ${p.branch}`).join('\n')}`;
+
+            const llmRes = await fetch('https://models.github.ai/inference/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${process.env.GITHUB_TOKEN}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                model: ['openai/gpt-4o-mini', 'anthropic/claude-haiku'][new Date().getHours() % 2],
+                messages: [
+                  { role: 'system', content: systemPrompt },
+                  { role: 'user', content: userPrompt },
+                ],
+                max_tokens: 800,
+                temperature: 0.1,
+              }),
+            });
+
+            if (!llmRes.ok) {
+              await respond('UNABLE. Models API unreachable. Command not executed.');
+              return;
+            }
+
+            const llmResult = await llmRes.json();
+            let raw = llmResult.choices?.[0]?.message?.content || '[]';
+            raw = raw.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/g, '').trim();
+
+            let planned;
+            try { planned = JSON.parse(raw); }
+            catch { await respond(`UNABLE. Parse failure.\n\n\`${raw.substring(0, 200)}\``); return; }
+
+            if (!Array.isArray(planned) || planned.length === 0) {
+              await respond('UNABLE. No actionable interpretation.');
+              return;
+            }
+            if (planned[0].action === 'unable') {
+              await respond(`UNABLE. ${planned[0].reason}`);
+              return;
+            }
+
+            // Safety: cap actions, validate targets, block recursive triggers
+            planned = planned.slice(0, 10);
+            const validIssueNums = new Set(state.issues.map(i => i.number));
+            const validPRNums = new Set(state.prs.map(p => p.number));
+            planned = planned.filter(step => {
+              if (step.issue && !validIssueNums.has(step.issue)) return false;
+              if (step.pr && !validPRNums.has(step.pr)) return false;
+              if (step.action === 'create_issue' && /^\[(DIRECT|HOLD|EXEC|CANCEL|STATUS|AMEND)\]/i.test(step.title)) return false;
+              return true;
+            });
+            if (planned.length === 0) {
+              await respond('UNABLE. All planned actions failed validation.');
+              return;
+            }
+
+            // Execute planned actions
+            const results = [];
+            for (const step of planned) {
+              try {
+                switch (step.action) {
+                  case 'add_label':
+                    try { await github.rest.issues.getLabel({ owner, repo, name: step.label }); }
+                    catch { await github.rest.issues.createLabel({ owner, repo, name: step.label, color: '666666' }); }
+                    await github.rest.issues.addLabels({ owner, repo, issue_number: step.issue, labels: [step.label] });
+                    results.push(`#${step.issue} + \`${step.label}\``);
+                    break;
+                  case 'remove_label':
+                    await github.rest.issues.removeLabel({ owner, repo, issue_number: step.issue, name: step.label }).catch(() => {});
+                    results.push(`#${step.issue} - \`${step.label}\``);
+                    break;
+                  case 'close_issue':
+                    await github.rest.issues.update({ owner, repo, issue_number: step.issue, state: 'closed', state_reason: 'not_planned' });
+                    results.push(`Closed #${step.issue}`);
+                    break;
+                  case 'comment':
+                    await github.rest.issues.createComment({ owner, repo, issue_number: step.issue, body: step.body });
+                    results.push(`Commented on #${step.issue}`);
+                    break;
+                  case 'create_issue': {
+                    const { data: created } = await github.rest.issues.create({
+                      owner, repo, title: step.title, body: step.body, labels: step.labels || ['agent'],
+                    });
+                    results.push(`Created #${created.number}: ${step.title}`);
+                    break;
+                  }
+                  case 'close_pr':
+                    await github.rest.pulls.update({ owner, repo, pull_number: step.pr, state: 'closed' });
+                    results.push(`Closed PR #${step.pr}`);
+                    break;
+                  default:
+                    results.push(`Unknown: ${step.action}`);
+                }
+              } catch (e) { results.push(`UNABLE ${step.action}: ${e.message}`); }
+            }
+
+            const ok = results.every(r => !r.startsWith('UNABLE'));
+            await respond(`${ok ? 'WILCO' : 'WILCO with exceptions'}. ${prefix} executed.\n\nInstruments:\n${results.map(r => `- ${r}`).join('\n')}`);
