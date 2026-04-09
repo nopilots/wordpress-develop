@@ -673,8 +673,6 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 	/**
 	 * Finds the next tag matching the $query.
 	 *
-	 * @todo Support matching the class name and tag name.
-	 *
 	 * @since 6.4.0
 	 * @since 6.6.0 Visits all tokens, including virtual ones.
 	 *

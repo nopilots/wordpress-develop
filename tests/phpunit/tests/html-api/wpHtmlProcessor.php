@@ -1181,4 +1181,69 @@ class Tests_HtmlApi_WpHtmlProcessor extends WP_UnitTestCase {
 			$processor->set_bookmark( 'beyond the limit' )
 		);
 	}
+
+	/**
+	 * Verifies that next_tag() can match both tag_name and class_name simultaneously.
+	 *
+	 * @ticket TBD
+	 *
+	 * @covers WP_HTML_Processor::next_tag
+	 */
+	public function test_next_tag_matches_tag_name_and_class_name() {
+		$html = '<div class="header">First</div><span class="header">Second</span><div class="footer">Third</div><div class="header">Fourth</div>';
+
+		// Test matching both tag_name and class_name.
+		$processor = WP_HTML_Processor::create_fragment( $html );
+
+		// Should find the first div with class="header".
+		$this->assertTrue(
+			$processor->next_tag(
+				array(
+					'tag_name'   => 'div',
+					'class_name' => 'header',
+				)
+			),
+			'Should find first div with class="header"'
+		);
+		$this->assertSame( 'First', $processor->get_inner_text(), 'Should match the first div with class="header"' );
+
+		// Should find the second div with class="header", skipping the span.
+		$this->assertTrue(
+			$processor->next_tag(
+				array(
+					'tag_name'   => 'div',
+					'class_name' => 'header',
+				)
+			),
+			'Should find second div with class="header"'
+		);
+		$this->assertSame( 'Fourth', $processor->get_inner_text(), 'Should match the second div with class="header"' );
+
+		// Should not find another div with class="header".
+		$this->assertFalse(
+			$processor->next_tag(
+				array(
+					'tag_name'   => 'div',
+					'class_name' => 'header',
+				)
+			),
+			'Should not find a third div with class="header"'
+		);
+
+		// Test that tag_name filter works independently.
+		$processor = WP_HTML_Processor::create_fragment( $html );
+		$this->assertTrue(
+			$processor->next_tag( array( 'tag_name' => 'span' ) ),
+			'Should find span tag'
+		);
+		$this->assertSame( 'Second', $processor->get_inner_text(), 'Should match the span element' );
+
+		// Test that class_name filter works independently.
+		$processor = WP_HTML_Processor::create_fragment( $html );
+		$this->assertTrue(
+			$processor->next_tag( array( 'class_name' => 'footer' ) ),
+			'Should find element with class="footer"'
+		);
+		$this->assertSame( 'Third', $processor->get_inner_text(), 'Should match the element with class="footer"' );
+	}
 }
