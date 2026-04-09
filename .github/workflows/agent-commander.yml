@@ -178,7 +178,7 @@ jobs:
               if (mergeMatch) {
                 const n = parseInt(mergeMatch[1]);
                 try {
-                  await github.rest.pulls.merge({ owner, repo, pull_number: n });
+                  await github.rest.pulls.merge({ owner, repo, pull_number: n, merge_method: 'squash' });
                   actions.push(`Merged PR #${n}`);
                 } catch (e) { actions.push(`UNABLE merge #${n}: ${e.message}`); }
               }
@@ -350,6 +350,11 @@ ${state.prs.map(p => `#${p.number} "${p.title}" [${p.labels.join(', ')}] ${p.bra
               ...state.issues.map(i => i.number),
               ...state.prs.map(p => p.number),
             ]);
+            planned = planned.map(step => ({
+              ...step,
+              ...(step.issue && { issue: Number(step.issue) }),
+              ...(step.pr && { pr: Number(step.pr) }),
+            }));
             planned = planned.filter(step => {
               if (step.issue && !validNums.has(step.issue)) return false;
               if (step.pr && !validNums.has(step.pr)) return false;
