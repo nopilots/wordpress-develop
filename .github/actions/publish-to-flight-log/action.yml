@@ -135,20 +135,19 @@ runs:
           if (!categoryId) core.warning(`Category "${slug}" not found — publishing without category.`);
 
           // Publish (with author fallback)
-          const isSticky = process.env.IS_STICKY === 'true';
           const postVars = {
             title: process.env.POST_TITLE,
             content: process.env.POST_CONTENT,
             excerpt: process.env.POST_EXCERPT,
             status: 'PUBLISH',
-            isSticky,
             ...(categoryId && { categories: { append: true, nodes: [{ id: categoryId }] } }),
             ...(authorId && { authorId }),
           };
 
-          const mutation = `mutation CreatePost($title: String!, $content: String!, $excerpt: String, $status: PostStatusEnum!, $categories: PostCategoriesInput, $authorId: ID, $isSticky: Boolean) {
-            createPost(input: { title: $title, content: $content, excerpt: $excerpt, status: $status, categories: $categories, authorId: $authorId, isSticky: $isSticky }) {
-              post { id uri link }
+          const isSticky = process.env.IS_STICKY === 'true';
+          const mutation = `mutation CreatePost($title: String!, $content: String!, $excerpt: String, $status: PostStatusEnum!, $categories: PostCategoriesInput, $authorId: ID) {
+            createPost(input: { title: $title, content: $content, excerpt: $excerpt, status: $status, categories: $categories, authorId: $authorId }) {
+              post { id uri link databaseId }
             }
           }`;
 
@@ -167,6 +166,32 @@ runs:
 
           const postId = data.createPost.post.id;
           const postLink = data.createPost.post.link;
+          const postDatabaseId = data.createPost.post.databaseId;
+
+          if (isSticky) {
+            if (!postDatabaseId) {
+              core.warning('Cannot set sticky flag: post databaseId missing.');
+            } else {
+              try {
+                const stickyRes = await fetch(`${wpUrl}/wp-json/wp/v2/posts/${postDatabaseId}`, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ sticky: true }),
+                });
+                if (!stickyRes.ok) {
+                  const text = await stickyRes.text();
+                  throw new Error(`HTTP ${stickyRes.status}: ${text}`);
+                }
+                core.info('Post pinned (sticky).');
+              } catch (stickyErr) {
+                core.warning(`Sticky publish failed: ${stickyErr.message}`);
+              }
+            }
+          }
+
           core.setOutput('post-id', postId);
           core.setOutput('post-link', postLink);
           core.info(`Published: ${postLink}`);
