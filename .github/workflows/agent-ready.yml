@@ -58,7 +58,15 @@ jobs:
               )
             );
 
-            for (const pr of drafts) {
+            // Only promote drafts if pipeline has capacity
+            const nonDraftCount = prs.filter(pr => !pr.draft).length;
+            const capacity = Math.max(0, 10 - nonDraftCount);
+            if (capacity === 0) {
+              core.info(`Pipeline at capacity (${nonDraftCount} non-draft PRs). Keeping ${drafts.length} draft(s) queued.`);
+              return;
+            }
+
+            for (const pr of drafts.slice(0, capacity)) {
               const { data: commits } = await github.rest.pulls.listCommits({
                 owner, repo,
                 pull_number: pr.number,

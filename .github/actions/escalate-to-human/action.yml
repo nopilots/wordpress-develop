@@ -1,0 +1,83 @@
+name: Escalate to Human
+description: Create or auto-close a needs:human issue for a specific stuck condition.
+
+inputs:
+  action:
+    description: '"create" to create a needs:human issue, "resolve" to auto-close one'
+    required: true
+  title:
+    description: 'Exact issue title (must match for dedup and auto-close)'
+    required: true
+  what-is-stuck:
+    description: 'Description of the stuck condition (for create only)'
+    required: false
+    default: ''
+  what-was-tried:
+    description: 'What the system tried before escalating (for create only)'
+    required: false
+    default: ''
+  what-to-do:
+    description: 'Instructions for the human (for create only)'
+    required: false
+    default: ''
+  resolve-message:
+    description: 'Comment to add when auto-closing (for resolve only)'
+    required: false
+    default: 'Condition resolved. Auto-closing.'
+
+runs:
+  using: composite
+  steps:
+    - name: Create or resolve needs:human issue
+      uses: actions/github-script@v7
+      env:
+        ACTION: ${{ inputs.action }}
+        HUMAN_TITLE: ${{ inputs.title }}
+        WHAT_STUCK: ${{ inputs.what-is-stuck }}
+        WHAT_TRIED: ${{ inputs.what-was-tried }}
+        WHAT_TO_DO: ${{ inputs.what-to-do }}
+        RESOLVE_MSG: ${{ inputs.resolve-message }}
+      with:
+        script: |
+          const owner = context.repo.owner;
+          const repo = context.repo.repo;
+          const title = process.env.HUMAN_TITLE;
+
+          const { data: humanIssues } = await github.rest.issues.listForRepo({
+            owner, repo, state: 'open', labels: 'needs:human', per_page: 50,
+          });
+
+          if (process.env.ACTION === 'create') {
+            if (humanIssues.some(i => i.title === title)) {
+              core.info(`needs:human issue already exists: ${title}`);
+              return;
+            }
+            await github.rest.issues.create({
+              owner, repo,
+              title,
+              body: [
+                '## What is stuck',
+                process.env.WHAT_STUCK,
+                '',
+                '## What the system tried',
+                process.env.WHAT_TRIED,
+                '',
+                '## What a human should do',
+                process.env.WHAT_TO_DO,
+              ].join('\n'),
+              labels: ['needs:human', 'agent'],
+            });
+            core.info(`Created needs:human issue: ${title}`);
+          } else if (process.env.ACTION === 'resolve') {
+            const issue = humanIssues.find(i => i.title === title);
+            if (!issue) return;
+            await github.rest.issues.createComment({
+              owner, repo, issue_number: issue.number,
+              body: process.env.RESOLVE_MSG,
+            });
+            await github.rest.issues.update({
+              owner, repo, issue_number: issue.number,
+              state: 'closed', state_reason: 'completed',
+            });
+            core.info(`Resolved needs:human issue: ${title}`);
+          }

@@ -108,9 +108,9 @@ jobs:
               p.head.ref.startsWith('codex/') ||
               p.labels.some(l => l.name === 'agent')
             );
+            // Log PR count but don't halt — Draft Converter handles capacity
             if (agentPRs.length > 10) {
-              halt = true;
-              reasons.push(`Open agent PRs: ${agentPRs.length} (limit: 10)`);
+              reasons.push(`High PR count: ${agentPRs.length} open agent PRs`);
             }
 
             // 3. Loop detection

@@ -25,10 +25,23 @@ jobs:
       (github.event_name == 'pull_request_target' &&
        github.event.pull_request.merged == false)
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read corrections from Flight Log
+        id: read-corrections
+        uses: ./.github/actions/read-from-flight-log
+        with:
+          category-slug: corrections
+          count: '5'
+          wp-url: ${{ secrets.WP_URL }}
+          wp-auth: ${{ secrets.WP_AUTH }}
+
       - name: Analyze failure and create preventive issue
         uses: actions/github-script@v7
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CORRECTIONS_CONTEXT: ${{ steps.read-corrections.outputs.summary }}
         with:
           script: |
             const owner = context.repo.owner;
@@ -128,7 +141,9 @@ jobs:
 - Only propose preventive measures that DON'T ALREADY EXIST in the system
 - If the failure was caused by a permission error, GitHub API limitation, or transient issue — respond with SKIP
 - If a guard already exists for this failure type (File Guard, Branch Guard, Safety circuit breaker) — respond with SKIP
-- Be specific about the technical root cause, not a restatement of the error message`,
+- Be specific about the technical root cause, not a restatement of the error message
+- Recent corrections already published (avoid duplicating these):
+${process.env.CORRECTIONS_CONTEXT || 'None.'}`,
                 }, {
                   role: 'user',
                   content: `Analyze this failure. If the existing system already handles it or it's a transient error, respond with exactly: SKIP\n\nOtherwise propose ONE preventive improvement.\n\nFailure:\n${failureContext.substring(0, 2000)}\n\nRespond with:\nSKIP (if already handled or transient)\nor:\nROOT_CAUSE: (specific technical cause)\nPREVENTION: (specific fix that doesn't duplicate existing guards)\nTITLE: (short issue title)`,

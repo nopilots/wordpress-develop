@@ -17,8 +17,22 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read sitrep from Flight Log
+        id: read-sitrep
+        uses: ./.github/actions/read-from-flight-log
+        with:
+          category-slug: sitrep
+          count: '3'
+          wp-url: ${{ secrets.WP_URL }}
+          wp-auth: ${{ secrets.WP_AUTH }}
+
       - name: Pipeline pulse check
         uses: actions/github-script@v7
+        env:
+          SITREP_CONTEXT: ${{ steps.read-sitrep.outputs.summary }}
         with:
           script: |
             const owner = context.repo.owner;
@@ -163,7 +177,7 @@ jobs:
                 await github.rest.issues.create({
                   owner, repo,
                   title: '[Pulse] Pipeline blockage',
-                  body: `The pulse check detected ${blockages.length} blockages:\n\n${blockages.map(b => '- ' + b).join('\n')}\n\nInvestigate and resolve.`,
+                  body: `The pulse check detected ${blockages.length} blockages:\n\n${blockages.map(b => '- ' + b).join('\n')}\n\n## Recent system status\n${process.env.SITREP_CONTEXT || 'No sitrep data.'}\n\nInvestigate and resolve.`,
                   labels: ['agent', 'needs-support'],
                 });
               }

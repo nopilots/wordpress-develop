@@ -20,8 +20,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Read recent merges from Flight Log
+        id: read-log
+        uses: ./.github/actions/read-from-flight-log
+        with:
+          category-slug: log
+          count: '10'
+          wp-url: ${{ secrets.WP_URL }}
+          wp-auth: ${{ secrets.WP_AUTH }}
+
       - name: Scan codebase and create issues
         uses: actions/github-script@v7
+        env:
+          LOG_CONTEXT: ${{ steps.read-log.outputs.summary }}
         with:
           script: |
             const { execSync } = require('child_process');
@@ -67,6 +78,13 @@ jobs:
               per_page: 100,
             });
             const existingTitles = allIssues.map(i => i.title.toLowerCase());
+
+            // Add recently shipped work from Flight Log to avoid proposing already-done work
+            const logContext = process.env.LOG_CONTEXT || '';
+            for (const line of logContext.split('\n').filter(Boolean)) {
+              const title = line.replace(/^\[\d{4}-\d{2}-\d{2}\]\s*/, '').split(':')[0]?.trim();
+              if (title) existingTitles.push(title.toLowerCase());
+            }
 
             const newIssues = [];
 

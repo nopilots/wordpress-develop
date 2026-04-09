@@ -23,6 +23,18 @@ jobs:
       github.event_name == 'schedule' ||
       (github.event.label.name == 'status:ready')
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read sitrep from Flight Log
+        id: read-sitrep
+        uses: ./.github/actions/read-from-flight-log
+        with:
+          category-slug: sitrep
+          count: '3'
+          wp-url: ${{ secrets.WP_URL }}
+          wp-auth: ${{ secrets.WP_AUTH }}
+
       - name: Generate app token
         id: app-token
         uses: actions/create-github-app-token@v1
@@ -35,6 +47,7 @@ jobs:
         env:
           COPILOT_PAT: ${{ secrets.COPILOT_PAT }}
           APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          SITREP_CONTEXT: ${{ steps.read-sitrep.outputs.summary }}
         with:
           script: |
             const owner = context.repo.owner;
@@ -170,8 +183,17 @@ jobs:
             const patOwner = viewerResult?.data?.viewer?.login;
             if (patOwner) core.info(`Will remove PAT owner (${patOwner}) from assignees after each assignment`);
 
-            // Assign up to 3 issues
-            for (const issue of unassigned.slice(0, 3)) {
+            // Pace assignments based on system health from Flight Log
+            let assignLimit = 3;
+            const sitrepContext = process.env.SITREP_CONTEXT || '';
+            // If sitrep mentions low approval rate or zero merges, throttle to 1
+            if (sitrepContext.match(/approval.*?[0-4]\d%/i) || sitrepContext.match(/merged.*?:?\s*0\b/i)) {
+              assignLimit = 1;
+              core.info('Throttling to 1 assignment — sitrep shows low velocity.');
+            }
+
+            // Assign issues
+            for (const issue of unassigned.slice(0, assignLimit)) {
               try {
                 const issueResult = await github.graphql(`{
                   repository(owner: "${owner}", name: "${repo}") {
