@@ -1,0 +1,45 @@
+name: Notify Human
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  issues: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    if: github.event.label.name == 'needs:human'
+    steps:
+      - name: Send push notification via ntfy
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          if [ -z "$NTFY_TOPIC" ]; then
+            echo "NTFY_TOPIC secret not set. Skipping notification."
+            exit 0
+          fi
+
+          TITLE="${{ github.event.issue.title }}"
+          URL="${{ github.event.issue.html_url }}"
+
+          # Extract the "What a human should do" section from the issue body
+          BODY=$(cat <<'BODY_EOF'
+          ${{ github.event.issue.body }}
+          BODY_EOF
+          )
+          ACTION=$(echo "$BODY" | sed -n '/## What a human should do/,/^## /p' | head -10 | tail -n +2)
+
+          curl -s \
+            -H "Title: No Pilots: Human needed" \
+            -H "Priority: high" \
+            -H "Tags: warning" \
+            -H "Click: ${URL}" \
+            -H "Actions: view, Open Issue, ${URL}" \
+            -d "${TITLE}
+
+${ACTION:-See the issue for details.}" \
+            "${NTFY_TOPIC}" || echo "ntfy notification failed (non-fatal)"
+
+          echo "Notification sent for: ${TITLE}"
