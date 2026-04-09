@@ -66,6 +66,7 @@ Each app needs:
 ### System
 - `system:off` — Kill switch. Halts all agent workflows when an open issue has this label.
 - `safety:halt` — Per-issue/PR halt. Blocks specific items from progressing.
+- `needs:human` — System is stuck on something specific. Requires human attention but not a full halt. Auto-closes when the condition resolves.
 
 ### Status
 - `status:ready` — Issue is ready for agent assignment

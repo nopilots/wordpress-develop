@@ -93,6 +93,56 @@ jobs:
             core.warning(`Pulse: ${blockages.length} blockage(s) detected.`);
             blockages.forEach(b => core.warning(`  ${b}`));
 
+            // Check for pipeline freeze >24h — escalate to needs:human
+            const oldReady = readyIssues.filter(i =>
+              (Date.now() - new Date(i.created_at)) > 24 * 60 * 60 * 1000
+            );
+            if (oldReady.length > 0 && inProgressIssues.length === 0) {
+              const humanTitle = '[Human] Pipeline frozen — ready issues idle >24h';
+              const { data: humanIssues } = await github.rest.issues.listForRepo({
+                owner, repo, state: 'open', labels: 'needs:human', per_page: 50,
+              });
+              if (!humanIssues.some(i => i.title === humanTitle)) {
+                await github.rest.issues.create({
+                  owner, repo,
+                  title: humanTitle,
+                  body: [
+                    '## What is stuck',
+                    `${oldReady.length} issue(s) have been in \`status:ready\` for >24h with no work picked up.`,
+                    '',
+                    `**Stuck issues:** ${oldReady.map(i => `#${i.number}`).join(', ')}`,
+                    '',
+                    '## What the system tried',
+                    'The Coordinator runs hourly to assign ready issues. Pulse runs every 4h to detect blockages.',
+                    '',
+                    '## What a human should do',
+                    '1. Check if coding agents are available (org settings)',
+                    '2. Verify COPILOT_PAT is valid',
+                    '3. Manually assign or close the stuck issues if appropriate',
+                  ].join('\n'),
+                  labels: ['needs:human', 'agent'],
+                });
+              }
+            }
+
+            // Auto-close pipeline freeze issue if work is flowing
+            if (inProgressIssues.length > 0) {
+              const { data: humanIssues } = await github.rest.issues.listForRepo({
+                owner, repo, state: 'open', labels: 'needs:human', per_page: 50,
+              });
+              const frozenIssue = humanIssues.find(i => i.title === '[Human] Pipeline frozen — ready issues idle >24h');
+              if (frozenIssue) {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: frozenIssue.number,
+                  body: 'Pipeline is flowing — work is in progress. Auto-closing.',
+                });
+                await github.rest.issues.update({
+                  owner, repo, issue_number: frozenIssue.number,
+                  state: 'closed', state_reason: 'completed',
+                });
+              }
+            }
+
             // Auto-remediate: promote stale triage issues to ready (bypass broken Triage)
             for (const issue of staleTriage) {
               await github.rest.issues.removeLabel({

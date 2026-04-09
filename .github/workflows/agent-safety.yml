@@ -40,6 +40,15 @@ jobs:
             let halt = false;
             const reasons = [];
 
+            // Track needs:human issues for visibility (warning only — do not add to reasons,
+            // as that would permanently block auto-recovery while any needs:human issue is open)
+            const { data: humanIssues } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'needs:human', per_page: 50,
+            });
+            if (humanIssues.length > 0) {
+              core.warning(`${humanIssues.length} needs:human issue(s) open: ${humanIssues.map(i => `#${i.number}: ${i.title}`).join(', ')}`);
+            }
+
             // 1. Check open agent issue count
             const { data: issues } = await github.rest.issues.listForRepo({
               owner, repo,

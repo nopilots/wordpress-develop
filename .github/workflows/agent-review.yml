@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
   models: read
 
 concurrency:
@@ -84,6 +85,15 @@ jobs:
               core.info(`Removed human assignees from PR #${prNumber}: ${humans.join(', ')}`);
             }
 
+      - name: Read corrections from Flight Log
+        id: read-corrections
+        uses: ./.github/actions/read-from-flight-log
+        with:
+          category-slug: corrections
+          count: '5'
+          wp-url: ${{ secrets.WP_URL }}
+          wp-auth: ${{ secrets.WP_AUTH }}
+
       - name: Run persona reviews
         uses: actions/github-script@v7
         env:
@@ -91,6 +101,7 @@ jobs:
           DALTON_TOKEN: ${{ steps.dalton-token.outputs.token }}
           PAT_TOKEN: ${{ steps.pat-token.outputs.token }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CORRECTIONS_CONTEXT: ${{ steps.read-corrections.outputs.summary }}
         with:
           script: |
             const fs = require('fs');
@@ -149,6 +160,7 @@ jobs:
               ? diff.substring(0, maxDiff) + `\n... (diff truncated — ${diff.length - maxDiff} chars unreviewed)`
               : diff;
 
+            const correctionsContext = process.env.CORRECTIONS_CONTEXT || '';
             const prContext = [
               `# PR #${prNumber}: ${pr.title}`,
               '',
@@ -158,7 +170,8 @@ jobs:
               '```diff',
               truncatedDiff,
               '```',
-            ].join('\n');
+              correctionsContext ? `\n## Recent course corrections (abandoned PRs)\n${correctionsContext}` : '',
+            ].filter(Boolean).join('\n');
 
             // Helper: call GitHub Models API with model rotation and fallback
             const MODELS = ['openai/gpt-4o-mini', 'anthropic/claude-haiku'];
@@ -335,6 +348,21 @@ jobs:
               core.exportVariable('FLIGHT_LOG_TITLE', pr.title);
               core.exportVariable('FLIGHT_LOG_CONTENT', reviewContent);
               core.exportVariable('FLIGHT_LOG_EXCERPT', `Verdict: ${event === 'APPROVE' ? 'Approved' : 'Changes requested'}.`);
+              // Auto-close Models API human issue on success
+              const { data: humanIssues } = await github.rest.issues.listForRepo({
+                owner, repo, state: 'open', labels: 'needs:human', per_page: 50,
+              });
+              const modelsReviewIssue = humanIssues.find(i => i.title === '[Human] Models API unavailable — PR reviews blocked');
+              if (modelsReviewIssue) {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: modelsReviewIssue.number,
+                  body: 'Models API is responding. Review completed. Auto-closing.',
+                });
+                await github.rest.issues.update({
+                  owner, repo, issue_number: modelsReviewIssue.number,
+                  state: 'closed', state_reason: 'completed',
+                });
+              }
             } else {
               await github.rest.issues.addLabels({
                 owner, repo,
@@ -342,6 +370,49 @@ jobs:
                 labels: ['safety:halt'],
               });
               core.setFailed('Pat review failed — Models API unavailable. PR halted.');
+
+              // Check if multiple PRs halted due to review failure — signal for human
+              // Only count PRs with no Pat review (halted by this workflow, not by Safety for other reasons)
+              const { data: haltedPRs } = await github.rest.pulls.list({
+                owner, repo, state: 'open', per_page: 20,
+              });
+              const haltedForReview = [];
+              for (const p of haltedPRs.filter(p => p.labels.some(l => l.name === 'safety:halt'))) {
+                const { data: reviews } = await github.rest.pulls.listReviews({
+                  owner, repo, pull_number: p.number,
+                });
+                if (!reviews.some(r => r.user?.login === 'nopilots-pat[bot]')) {
+                  haltedForReview.push(p);
+                }
+              }
+              const modelsHalted = haltedForReview;
+              if (modelsHalted.length >= 2) {
+                const humanTitle = '[Human] Models API unavailable — PR reviews blocked';
+                const { data: humanIssues } = await github.rest.issues.listForRepo({
+                  owner, repo, state: 'open', labels: 'needs:human', per_page: 50,
+                });
+                if (!humanIssues.some(i => i.title === humanTitle)) {
+                  await github.rest.issues.create({
+                    owner, repo,
+                    title: humanTitle,
+                    body: [
+                      '## What is stuck',
+                      `The Models API is down. ${modelsHalted.length} PRs are halted because review cannot function without AI.`,
+                      '',
+                      `**Halted PRs:** ${modelsHalted.map(p => `#${p.number}`).join(', ')}`,
+                      '',
+                      '## What the system tried',
+                      'The review workflow attempted multiple model providers with fallback. All failed.',
+                      '',
+                      '## What a human should do',
+                      '1. Check GitHub Models API status',
+                      '2. If persistent, manually review the halted PRs',
+                      '3. Remove `safety:halt` labels from PRs once reviewed',
+                    ].join('\n'),
+                    labels: ['needs:human', 'agent'],
+                  });
+                }
+              }
             }
 
       - name: Publish to Flight Log

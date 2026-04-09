@@ -28,10 +28,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Read corrections from Flight Log
+        id: read-corrections
+        uses: ./.github/actions/read-from-flight-log
+        with:
+          category-slug: corrections
+          count: '3'
+          wp-url: ${{ secrets.WP_URL }}
+          wp-auth: ${{ secrets.WP_AUTH }}
+
+      - name: Read preflight patterns from Flight Log
+        id: read-preflight
+        uses: ./.github/actions/read-from-flight-log
+        with:
+          category-slug: preflight
+          count: '5'
+          wp-url: ${{ secrets.WP_URL }}
+          wp-auth: ${{ secrets.WP_AUTH }}
+
       - name: Evaluate issue
         uses: actions/github-script@v7
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CORRECTIONS_CONTEXT: ${{ steps.read-corrections.outputs.summary }}
+          PREFLIGHT_CONTEXT: ${{ steps.read-preflight.outputs.summary }}
         with:
           script: |
             const fs = require('fs');
@@ -97,7 +117,7 @@ VERDICT: APPROVE or REJECT
 REASON: one sentence`,
                 }, {
                   role: 'user',
-                  content: `Issue #${issueNumber}: ${issue.title}\n\n${(issue.body || '').substring(0, 1500)}\n\nOpen issues:\n${existingTitles}\n\nRecently closed:\n${recentClosed}\n\nGovernance:\n${governance.substring(0, 1000)}`,
+                  content: `Issue #${issueNumber}: ${issue.title}\n\n${(issue.body || '').substring(0, 1500)}\n\nOpen issues:\n${existingTitles}\n\nRecently closed:\n${recentClosed}\n\nGovernance:\n${governance.substring(0, 1000)}\n\nRecent corrections (abandoned PRs):\n${process.env.CORRECTIONS_CONTEXT || 'None.'}\n\nRecent review patterns:\n${process.env.PREFLIGHT_CONTEXT || 'None.'}`,
                 }],
                 max_tokens: 100,
                 temperature: 0.2,
@@ -106,7 +126,55 @@ REASON: one sentence`,
 
             if (!triageRes.ok) {
               core.warning('Models API unavailable — holding issue for retry.');
+              // Check if multiple triage issues are stuck — signal for human
+              const { data: allTriage } = await github.rest.issues.listForRepo({
+                owner, repo, state: 'open', labels: 'status:triage', per_page: 50,
+              });
+              const staleTriage = allTriage.filter(i =>
+                (Date.now() - new Date(i.created_at)) > 2 * 60 * 60 * 1000
+              );
+              if (staleTriage.length >= 2) {
+                const humanTitle = '[Human] Models API unavailable — triage blocked';
+                const { data: humanIssues } = await github.rest.issues.listForRepo({
+                  owner, repo, state: 'open', labels: 'needs:human', per_page: 50,
+                });
+                if (!humanIssues.some(i => i.title === humanTitle)) {
+                  await github.rest.issues.create({
+                    owner, repo,
+                    title: humanTitle,
+                    body: [
+                      '## What is stuck',
+                      `The GitHub Models API is unreachable. ${staleTriage.length} issues are stuck in \`status:triage\` for >2h.`,
+                      '',
+                      '## What the system tried',
+                      'Triage attempted to call the Models API and received a non-OK response. Issues are held for retry.',
+                      '',
+                      '## What a human should do',
+                      '1. Check GitHub Models API status',
+                      '2. If temporary, wait — Pulse auto-promotes stale triage issues after 3h',
+                      `3. Stale issues: ${staleTriage.map(i => `#${i.number}`).join(', ')}`,
+                    ].join('\n'),
+                    labels: ['needs:human', 'agent'],
+                  });
+                }
+              }
               return;
+            }
+
+            // Auto-close Models API human issue on success
+            const { data: humanIssues } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'needs:human', per_page: 50,
+            });
+            const modelsIssue = humanIssues.find(i => i.title === '[Human] Models API unavailable — triage blocked');
+            if (modelsIssue) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: modelsIssue.number,
+                body: 'Models API is responding again. Auto-closing.',
+              });
+              await github.rest.issues.update({
+                owner, repo, issue_number: modelsIssue.number,
+                state: 'closed', state_reason: 'completed',
+              });
             }
 
             const result = await triageRes.json();

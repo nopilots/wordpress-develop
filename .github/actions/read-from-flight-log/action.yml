@@ -1,0 +1,97 @@
+name: Read from Flight Log
+description: Query recent posts from a WordPress category via WPGraphQL.
+
+inputs:
+  category-slug:
+    description: WordPress category slug to query
+    required: true
+  count:
+    description: Number of recent posts to fetch
+    required: false
+    default: '5'
+  wp-url:
+    description: WordPress site URL
+    required: true
+  wp-auth:
+    description: WordPress application password (user:pass)
+    required: true
+
+outputs:
+  posts:
+    description: JSON array of recent posts
+    value: ${{ steps.read.outputs.posts }}
+  summary:
+    description: Plain text summary suitable for LLM prompt injection
+    value: ${{ steps.read.outputs.summary }}
+
+runs:
+  using: composite
+  steps:
+    - name: Query WordPress
+      id: read
+      uses: actions/github-script@v7
+      env:
+        WP_URL: ${{ inputs.wp-url }}
+        WP_AUTH: ${{ inputs.wp-auth }}
+        CATEGORY_SLUG: ${{ inputs.category-slug }}
+        POST_COUNT: ${{ inputs.count }}
+      with:
+        script: |
+          const wpUrl = process.env.WP_URL;
+          const wpAuth = process.env.WP_AUTH;
+          const slug = process.env.CATEGORY_SLUG;
+          const count = parseInt(process.env.POST_COUNT) || 5;
+
+          try {
+            const res = await fetch(`${wpUrl}/graphql`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                query: `query($slug: [String], $count: Int) {
+                  posts(first: $count, where: { categoryName: $slug, status: PUBLISH, orderby: { field: DATE, order: DESC } }) {
+                    nodes { title content excerpt date }
+                  }
+                }`,
+                variables: { slug: [slug], count },
+              }),
+            });
+
+            if (!res.ok) {
+              core.warning(`Flight Log read failed: HTTP ${res.status}`);
+              core.setOutput('posts', '[]');
+              core.setOutput('summary', '');
+              return;
+            }
+
+            const json = await res.json();
+            if (json.errors) {
+              core.warning(`Flight Log read error: ${json.errors[0].message}`);
+              core.setOutput('posts', '[]');
+              core.setOutput('summary', '');
+              return;
+            }
+
+            const posts = json.data?.posts?.nodes || [];
+            core.setOutput('posts', JSON.stringify(posts));
+
+            // Build plain text summary — compact, LLM-friendly
+            const summary = posts.map(p => {
+              const date = p.date ? p.date.substring(0, 10) : '?';
+              const text = (p.excerpt || p.content || '')
+                .replace(/<[^>]+>/g, '')
+                .replace(/\s+/g, ' ')
+                .trim()
+                .substring(0, 300);
+              return `[${date}] ${p.title}: ${text}`;
+            }).join('\n').substring(0, 2000);
+
+            core.setOutput('summary', summary);
+            core.info(`Read ${posts.length} posts from "${slug}".`);
+          } catch (e) {
+            core.warning(`Flight Log read failed: ${e.message}`);
+            core.setOutput('posts', '[]');
+            core.setOutput('summary', '');
+          }

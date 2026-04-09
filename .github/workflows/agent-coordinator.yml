@@ -102,20 +102,49 @@ jobs:
               : null;
 
             if (!agent) {
+              const humanTitle = '[Human] No coding agents available — work assignment blocked';
               const { data: botIssues } = await github.rest.issues.listForRepo({
                 owner, repo, state: 'open', per_page: 50,
               });
-              const hasAlert = botIssues.some(i => i.title.includes('[CRITICAL] No coding agent'));
+              const hasAlert = botIssues.some(i =>
+                i.title === humanTitle || i.title.includes('[CRITICAL] No coding agent')
+              );
               if (!hasAlert) {
                 await github.rest.issues.create({
                   owner, repo,
-                  title: '[CRITICAL] No coding agent available',
-                  body: 'The coordinator cannot find any assignable coding agent bot. Verify that coding agents are enabled for this repository in the org settings.',
-                  labels: ['safety:halt'],
+                  title: humanTitle,
+                  body: [
+                    '## What is stuck',
+                    'The Coordinator cannot find any assignable coding agent bot. No ready issues can be picked up.',
+                    '',
+                    '## What the system tried',
+                    'Checked for anthropic-code-agent, openai-code-agent, and copilot-swe-agent via suggestedActors.',
+                    '',
+                    '## What a human should do',
+                    '1. Verify coding agents are enabled for this repository in org settings',
+                    '2. Check that at least one coding agent is configured',
+                  ].join('\n'),
+                  labels: ['needs:human', 'agent'],
                 });
               }
               core.setFailed('No coding agent found.');
               return;
+            }
+
+            // Auto-close agent availability issue if we found one
+            const { data: humanIssues } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'needs:human', per_page: 50,
+            });
+            const agentHuman = humanIssues.find(i => i.title === '[Human] No coding agents available — work assignment blocked');
+            if (agentHuman) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: agentHuman.number,
+                body: `Coding agent found: ${agent.login}. Auto-closing.`,
+              });
+              await github.rest.issues.update({
+                owner, repo, issue_number: agentHuman.number,
+                state: 'closed', state_reason: 'completed',
+              });
             }
 
             core.info(`Selected agent: ${agent.login} (${agent.id})`);

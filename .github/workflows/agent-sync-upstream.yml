@@ -77,6 +77,22 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
 
+            // Auto-close conflict human issue on successful merge
+            const { data: humanIssues } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'needs:human', per_page: 50,
+            });
+            const conflictHuman = humanIssues.find(i => i.title === '[Human] Merge conflict persists — upstream sync blocked');
+            if (conflictHuman) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: conflictHuman.number,
+                body: 'Upstream sync succeeded. Conflict resolved. Auto-closing.',
+              });
+              await github.rest.issues.update({
+                owner, repo, issue_number: conflictHuman.number,
+                state: 'closed', state_reason: 'completed',
+              });
+            }
+
             // Get files changed in the merge
             let changedFiles;
             try {
@@ -216,6 +232,36 @@ jobs:
             });
 
             if (existing.length > 0) {
+              // Conflict issue already exists — check if stale (>48h), escalate to needs:human
+              const oldest = existing[0];
+              if (Date.now() - new Date(oldest.created_at) > 48 * 60 * 60 * 1000) {
+                const humanTitle = '[Human] Merge conflict persists — upstream sync blocked';
+                const { data: humanIssues } = await github.rest.issues.listForRepo({
+                  owner: context.repo.owner, repo: context.repo.repo,
+                  state: 'open', labels: 'needs:human', per_page: 50,
+                });
+                if (!humanIssues.some(i => i.title === humanTitle)) {
+                  await github.rest.issues.create({
+                    owner: context.repo.owner, repo: context.repo.repo,
+                    title: humanTitle,
+                    body: [
+                      '## What is stuck',
+                      `A merge conflict between \`trunk\` and \`autopilot\` has persisted for >48h.`,
+                      '',
+                      `**Conflict issue:** #${oldest.number}`,
+                      '',
+                      '## What the system tried',
+                      'Created a conflict resolution issue and assigned it to an agent. The agent has not resolved it.',
+                      '',
+                      '## What a human should do',
+                      '1. Checkout `autopilot` and run `git merge origin/trunk`',
+                      '2. Resolve conflicts manually',
+                      '3. Push the resolution and close the conflict issue',
+                    ].join('\n'),
+                    labels: ['needs:human', 'agent'],
+                  });
+                }
+              }
               core.info('Conflict issue already open.');
               return;
             }

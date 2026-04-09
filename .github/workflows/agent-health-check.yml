@@ -7,6 +7,7 @@ on:
 
 permissions:
   issues: write
+  models: read
 
 jobs:
   check:
@@ -19,6 +20,7 @@ jobs:
           WP_URL: ${{ secrets.WP_URL }}
           WP_AUTH: ${{ secrets.WP_AUTH }}
           COPILOT_PAT: ${{ secrets.COPILOT_PAT }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           script: |
             const owner = context.repo.owner;
@@ -140,7 +142,6 @@ jobs:
               } catch (e) {
                 failures.push(`Write access check failed: ${e.message}`);
               }
-            }
 
             // 4. Blog audit — check published posts for quality issues
               try {
@@ -219,6 +220,7 @@ jobs:
               } catch (e) {
                 core.warning(`Blog audit failed: ${e.message}`);
               }
+            }
 
             // 5. Workflow inventory — detect system growth
             try {
@@ -247,6 +249,29 @@ jobs:
                     owner, repo, issue_number: lastInventory.number,
                     body: `Count: ${agentWorkflows.length}\nWorkflows: ${agentWorkflows.join(', ')}\nLast change: ${new Date().toISOString()} (${delta > 0 ? '+' : ''}${delta})`,
                   });
+                }
+                // Flag workflow growth for human review
+                if (delta > 0) {
+                  const humanTitle = `[Human] Workflow count grew (+${delta})`;
+                  const { data: humanIssues } = await github.rest.issues.listForRepo({
+                    owner, repo, state: 'open', labels: 'needs:human', per_page: 50,
+                  });
+                  if (!humanIssues.some(i => i.title.startsWith('[Human] Workflow count grew'))) {
+                    await github.rest.issues.create({
+                      owner, repo,
+                      title: humanTitle,
+                      body: [
+                        '## What is stuck',
+                        `Workflow inventory changed from ${lastCount} to ${agentWorkflows.length} (${delta > 0 ? '+' : ''}${delta}).`,
+                        '',
+                        `**Current workflows:** ${agentWorkflows.join(', ')}`,
+                        '',
+                        '## What a human should do',
+                        'Review whether the new workflow(s) are intentional. Verify they are safe and follow project conventions.',
+                      ].join('\n'),
+                      labels: ['needs:human', 'agent'],
+                    });
+                  }
                 }
               } else if (!lastInventory) {
                 await github.rest.issues.create({
@@ -307,9 +332,89 @@ jobs:
               failures.push(`Coding agent check failed: ${e.message}`);
             }
 
+            // 8. Check Models API availability
+            try {
+              const modelsRes = await fetch('https://models.github.ai/inference/chat/completions', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${process.env.GITHUB_TOKEN || ''}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  model: 'openai/gpt-4o-mini',
+                  messages: [{ role: 'user', content: 'ping' }],
+                  max_tokens: 5,
+                }),
+              });
+              if (!modelsRes.ok) {
+                failures.push(`Models API unreachable: HTTP ${modelsRes.status}`);
+              } else {
+                core.info('Models API: OK');
+              }
+            } catch (e) {
+              failures.push(`Models API check failed: ${e.message}`);
+            }
+
+            // 9. Verify WP author slugs exist
+            if (wpUrl && wpAuth) {
+              const requiredAuthors = ['autopilot', 'pat'];
+              try {
+                const authorsRes = await fetch(`${wpUrl}/graphql`, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    query: `{ users(first: 100) { nodes { slug } } }`,
+                  }),
+                });
+                if (authorsRes.ok) {
+                  const authorsData = await authorsRes.json();
+                  const slugs = authorsData.data?.users?.nodes?.map(n => n.slug) || [];
+                  for (const required of requiredAuthors) {
+                    if (slugs.includes(required)) {
+                      core.info(`Author "${required}": OK`);
+                    } else {
+                      // Try REST API fallback (users with no posts don't appear in GraphQL)
+                      const restRes = await fetch(`${wpUrl}/wp-json/wp/v2/users?slug=${required}&per_page=1`, {
+                        headers: { 'Authorization': `Basic ${Buffer.from(wpAuth).toString('base64')}` },
+                      });
+                      if (restRes.ok) {
+                        const users = await restRes.json();
+                        if (Array.isArray(users) && users.length > 0) {
+                          core.info(`Author "${required}": OK (via REST)`);
+                        } else {
+                          failures.push(`Author "${required}" missing from WordPress.`);
+                        }
+                      } else {
+                        failures.push(`Author "${required}" check failed.`);
+                      }
+                    }
+                  }
+                }
+              } catch (e) {
+                core.warning(`Author check failed: ${e.message}`);
+              }
+            }
+
             // Report results
             if (failures.length === 0) {
               core.info('All health checks passed.');
+              // Auto-close any needs:human issues from health check
+              const { data: humanIssues } = await github.rest.issues.listForRepo({
+                owner, repo, state: 'open', labels: 'needs:human', per_page: 50,
+              });
+              for (const issue of humanIssues.filter(i => i.title.startsWith('[Human] Health:'))) {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: issue.number,
+                  body: 'Health check passing. Auto-closing.',
+                });
+                await github.rest.issues.update({
+                  owner, repo, issue_number: issue.number,
+                  state: 'closed', state_reason: 'completed',
+                });
+              }
               return;
             }
 
@@ -328,4 +433,54 @@ jobs:
                 body: `The daily health check found issues:\n\n${failures.map(f => '- ' + f).join('\n')}\n\nThis issue will auto-close when all checks pass.`,
                 labels: ['safety:halt'],
               });
+            } else {
+              // Persistent failure — escalate to needs:human
+              const humanMap = {
+                'WPGraphQL unreachable': '[Human] Health: WordPress site unreachable',
+                'WordPress connection failed': '[Human] Health: WordPress site unreachable',
+                'COPILOT_PAT invalid': '[Human] Health: COPILOT_PAT expired or invalid',
+                'COPILOT_PAT secret is not set': '[Human] Health: COPILOT_PAT expired or invalid',
+                'No coding agents available': '[Human] Health: No coding agents available',
+                'Models API unreachable': '[Human] Health: Models API down',
+                'Models API check failed': '[Human] Health: Models API down',
+                'Author': '[Human] Health: WordPress author missing',
+              };
+
+              const { data: humanIssues } = await github.rest.issues.listForRepo({
+                owner, repo, state: 'open', labels: 'needs:human', per_page: 50,
+              });
+
+              for (const failure of failures) {
+                const matchedKey = Object.keys(humanMap).find(k => failure.includes(k));
+                if (!matchedKey) continue;
+                const humanTitle = humanMap[matchedKey];
+                if (humanIssues.some(i => i.title === humanTitle)) continue;
+
+                await github.rest.issues.create({
+                  owner, repo,
+                  title: humanTitle,
+                  body: [
+                    '## What is stuck',
+                    `Health check has failed on this condition for 2+ consecutive daily runs:`,
+                    `- ${failure}`,
+                    '',
+                    '## What the system tried',
+                    'The health check runs daily at 06:00 UTC. This condition persisted across multiple runs.',
+                    '',
+                    '## What a human should do',
+                    matchedKey.includes('WPGraphQL') || matchedKey.includes('WordPress') ?
+                      'Check WordPress site availability. Verify WP_URL and WP_AUTH secrets.' :
+                    matchedKey.includes('COPILOT_PAT') ?
+                      'Generate a new PAT and update the COPILOT_PAT repository secret.' :
+                    matchedKey.includes('coding agents') ?
+                      'Verify coding agents are enabled for this repository in org settings.' :
+                    matchedKey.includes('Models API') ?
+                      'Check GitHub Models API status.' :
+                    matchedKey.includes('Author') ?
+                      'Create the missing WordPress user account.' :
+                      'Investigate the root cause.',
+                  ].join('\n'),
+                  labels: ['needs:human', 'agent'],
+                });
+              }
             }
