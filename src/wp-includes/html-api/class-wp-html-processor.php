@@ -1904,7 +1904,13 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 			/*
 			 * > A start tag whose tag name is "script"
 			 *
-			 * @todo Could the adjusted insertion location be anything other than the current location?
+			 * The adjusted insertion location is always the current location in "in head" mode
+			 * because foster parenting is never enabled in this insertion mode. Foster parenting
+			 * only applies in table-related insertion modes (e.g., "in table"), so the
+			 * "appropriate place for inserting a node" algorithm always returns the current node
+			 * (the HEAD element) as the insertion location.
+			 *
+			 * @see https://html.spec.whatwg.org/#appropriate-place-for-inserting-a-node
 			 */
 			case '+SCRIPT':
 				$this->insert_html_element( $this->state->current_token );
@@ -1934,7 +1940,13 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 			/*
 			 * > A start tag whose tag name is "template"
 			 *
-			 * @todo Could the adjusted insertion location be anything other than the current location?
+			 * The adjusted insertion location is always the current location in "in head" mode
+			 * because foster parenting is never enabled in this insertion mode. Foster parenting
+			 * only applies in table-related insertion modes (e.g., "in table"), so the
+			 * "appropriate place for inserting a node" algorithm always returns the current node
+			 * (the HEAD element) as the insertion location.
+			 *
+			 * @see https://html.spec.whatwg.org/#appropriate-place-for-inserting-a-node
 			 */
 			case '+TEMPLATE':
 				$this->state->active_formatting_elements->insert_marker();
