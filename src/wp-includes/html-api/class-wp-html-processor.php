@@ -818,12 +818,16 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 		/*
 		 * Prime the events if there are none.
 		 *
-		 * @todo In some cases, probably related to the adoption agency
-		 *       algorithm, this call to step() doesn't create any new
-		 *       events. Calling it again creates them. Figure out why
-		 *       this is and if it's inherent or if it's a bug. Looping
-		 *       until there are events or until there are no more
-		 *       tokens works in the meantime and isn't obviously wrong.
+		 * Some HTML parsing steps, particularly those involving the adoption agency
+		 * algorithm, may complete without generating stack events. This occurs when
+		 * parse errors are encountered and the algorithm handles them by returning
+		 * early without modifying the stack of open elements (e.g., when a formatting
+		 * element is not in scope or not in the stack). In these cases, step() returns
+		 * true but doesn't add events to element_queue.
+		 *
+		 * The recursive call ensures processing continues until either events are
+		 * generated or no more tokens remain. This behavior is correct and inherent
+		 * to the HTML specification's error recovery mechanisms.
 		 */
 		if ( empty( $this->element_queue ) && $this->step() ) {
 			return $this->next_visitable_token();
