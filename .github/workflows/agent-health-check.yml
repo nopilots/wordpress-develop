@@ -416,6 +416,20 @@ jobs:
                   state: 'closed', state_reason: 'completed',
                 });
               }
+              // Auto-close the halt issue itself
+              const { data: haltIssues } = await github.rest.issues.listForRepo({
+                owner, repo, state: 'open', labels: 'safety:halt', per_page: 50,
+              });
+              for (const issue of haltIssues.filter(i => i.title === '[Health Check] System issues detected')) {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: issue.number,
+                  body: 'All health checks passing. Auto-closing.',
+                });
+                await github.rest.issues.update({
+                  owner, repo, issue_number: issue.number,
+                  state: 'closed', state_reason: 'completed',
+                });
+              }
               return;
             }
 
