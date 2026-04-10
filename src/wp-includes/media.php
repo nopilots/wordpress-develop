@@ -4161,8 +4161,6 @@ function is_gd_image( $image ) {
 /**
  * Creates a new GD image resource with transparency support.
  *
- * @todo Deprecate if possible.
- *
  * @since 2.9.0
  *
  * @param int $width  Image width in pixels.

@@ -7283,6 +7283,77 @@ EOF;
 			'height' => 100,
 		);
 	}
+
+	/**
+	 * Tests wp_imagecreatetruecolor() creates an image resource with transparency support.
+	 *
+	 * @requires extension gd
+	 */
+	public function test_wp_imagecreatetruecolor() {
+		if ( ! function_exists( 'imagecreatetruecolor' ) ) {
+			$this->markTestSkipped( 'GD extension is not available.' );
+		}
+
+		$width  = 100;
+		$height = 100;
+		$img    = wp_imagecreatetruecolor( $width, $height );
+
+		$this->assertTrue( is_gd_image( $img ), 'wp_imagecreatetruecolor() should return a valid GD image resource or GdImage instance.' );
+		$this->assertSame( $width, imagesx( $img ), 'Image width should match the requested width.' );
+		$this->assertSame( $height, imagesy( $img ), 'Image height should match the requested height.' );
+
+		// Clean up.
+		imagedestroy( $img );
+	}
+
+	/**
+	 * Tests wp_imagecreatetruecolor() with invalid dimensions.
+	 *
+	 * @requires extension gd
+	 */
+	public function test_wp_imagecreatetruecolor_invalid_dimensions() {
+		if ( ! function_exists( 'imagecreatetruecolor' ) ) {
+			$this->markTestSkipped( 'GD extension is not available.' );
+		}
+
+		// Test with zero width.
+		$img = wp_imagecreatetruecolor( 0, 100 );
+		$this->assertFalse( $img, 'wp_imagecreatetruecolor() should return false for zero width.' );
+
+		// Test with negative dimensions.
+		$img = wp_imagecreatetruecolor( -100, 100 );
+		$this->assertFalse( $img, 'wp_imagecreatetruecolor() should return false for negative width.' );
+	}
+
+	/**
+	 * Tests wp_imagecreatetruecolor() preserves alpha channel.
+	 *
+	 * @requires extension gd
+	 */
+	public function test_wp_imagecreatetruecolor_alpha_channel() {
+		if ( ! function_exists( 'imagecreatetruecolor' ) || ! function_exists( 'imagesavealpha' ) ) {
+			$this->markTestSkipped( 'GD extension or alpha support is not available.' );
+		}
+
+		$img = wp_imagecreatetruecolor( 100, 100 );
+		$this->assertTrue( is_gd_image( $img ), 'wp_imagecreatetruecolor() should return a valid GD image.' );
+
+		// Allocate a transparent color.
+		$transparent = imagecolorallocatealpha( $img, 0, 0, 0, 127 );
+		$this->assertIsInt( $transparent, 'Should be able to allocate a transparent color.' );
+
+		// Fill the image with transparent color.
+		imagefill( $img, 0, 0, $transparent );
+
+		// Check that we can get the color at a pixel (verifying transparency is preserved).
+		$color_index = imagecolorat( $img, 50, 50 );
+		$colors      = imagecolorsforindex( $img, $color_index );
+
+		$this->assertSame( 127, $colors['alpha'], 'Alpha channel should be preserved.' );
+
+		// Clean up.
+		imagedestroy( $img );
+	}
 }
 
 /**
