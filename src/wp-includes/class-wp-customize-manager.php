@@ -1500,14 +1500,30 @@ final class WP_Customize_Manager {
 			);
 			$this->pending_starter_content_settings_ids[] = $nav_menu_setting_id;
 
-			// @todo Add support for menu_item_parent.
+			// Build a map of menu item symbols to placeholder IDs for menu_item_parent support.
+			$menu_item_symbol_ids = array();
+			foreach ( $nav_menu['items'] as $item_symbol => $nav_menu_item ) {
+				$menu_item_symbol_ids[ $item_symbol ] = $placeholder_id--;
+			}
+
 			$position = 0;
-			foreach ( $nav_menu['items'] as $nav_menu_item ) {
-				$nav_menu_item_setting_id = sprintf( 'nav_menu_item[%d]', $placeholder_id-- );
+			foreach ( $nav_menu['items'] as $item_symbol => $nav_menu_item ) {
+				$nav_menu_item_setting_id = sprintf( 'nav_menu_item[%d]', $menu_item_symbol_ids[ $item_symbol ] );
 				if ( ! isset( $nav_menu_item['position'] ) ) {
 					$nav_menu_item['position'] = $position++;
 				}
 				$nav_menu_item['nav_menu_term_id'] = $nav_menu_term_id;
+
+				// Handle menu_item_parent with symbolic references.
+				if ( isset( $nav_menu_item['menu_item_parent'] ) ) {
+					$matches = array();
+					if ( preg_match( '/^{{(?P<symbol>.+)}}$/', $nav_menu_item['menu_item_parent'], $matches ) && isset( $menu_item_symbol_ids[ $matches['symbol'] ] ) ) {
+						$nav_menu_item['menu_item_parent'] = $menu_item_symbol_ids[ $matches['symbol'] ];
+					}
+					// Else keep the value as-is (could be an integer or 0).
+				} else {
+					$nav_menu_item['menu_item_parent'] = 0;
+				}
 
 				if ( isset( $nav_menu_item['object_id'] ) ) {
 					if ( 'post_type' === $nav_menu_item['type'] && preg_match( '/^{{(?P<symbol>.+)}}$/', $nav_menu_item['object_id'], $matches ) && isset( $posts[ $matches['symbol'] ] ) ) {

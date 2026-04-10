@@ -3683,6 +3683,157 @@ class Tests_WP_Customize_Manager extends WP_UnitTestCase {
 			$this->assertSame( $video_url, $sanitized );
 		}
 	}
+
+	/**
+	 * Test hierarchical menu structures with menu_item_parent in starter content.
+	 *
+	 * @covers WP_Customize_Manager::import_theme_starter_content
+	 */
+	public function test_import_theme_starter_content_with_menu_item_parent() {
+		wp_set_current_user( self::$admin_user_id );
+		register_nav_menu( 'primary', 'Primary Menu' );
+
+		global $wp_customize;
+		$wp_customize           = new WP_Customize_Manager();
+		$starter_content_config = array(
+			'posts'     => array(
+				'home'     => array(
+					'post_type'  => 'page',
+					'post_title' => 'Home',
+				),
+				'about'    => array(
+					'post_type'  => 'page',
+					'post_title' => 'About',
+				),
+				'services' => array(
+					'post_type'  => 'page',
+					'post_title' => 'Services',
+				),
+				'team'     => array(
+					'post_type'  => 'page',
+					'post_title' => 'Team',
+				),
+			),
+			'nav_menus' => array(
+				'primary' => array(
+					'name'  => 'Primary Menu',
+					'items' => array(
+						'home'     => array(
+							'type'      => 'post_type',
+							'object'    => 'page',
+							'object_id' => '{{home}}',
+						),
+						'about'    => array(
+							'type'      => 'post_type',
+							'object'    => 'page',
+							'object_id' => '{{about}}',
+						),
+						'services' => array(
+							'type'      => 'post_type',
+							'object'    => 'page',
+							'object_id' => '{{services}}',
+							// services is a child of about.
+							'menu_item_parent' => '{{about}}',
+						),
+						'team'     => array(
+							'type'      => 'post_type',
+							'object'    => 'page',
+							'object_id' => '{{team}}',
+							// team is a child of about.
+							'menu_item_parent' => '{{about}}',
+						),
+						'contact'  => array(
+							'type'  => 'custom',
+							'title' => 'Contact',
+							'url'   => 'https://example.com/contact',
+							// contact is a child of services (which is itself a child of about).
+							'menu_item_parent' => '{{services}}',
+						),
+					),
+				),
+			),
+		);
+
+		add_theme_support( 'starter-content', $starter_content_config );
+		$wp_customize->import_theme_starter_content();
+		$changeset_values = $wp_customize->unsanitized_post_values();
+
+		// Verify all menu items were created.
+		$this->assertArrayHasKey( 'nav_menu_item[-1]', $changeset_values );
+		$this->assertArrayHasKey( 'nav_menu_item[-2]', $changeset_values );
+		$this->assertArrayHasKey( 'nav_menu_item[-3]', $changeset_values );
+		$this->assertArrayHasKey( 'nav_menu_item[-4]', $changeset_values );
+		$this->assertArrayHasKey( 'nav_menu_item[-5]', $changeset_values );
+
+		// Verify hierarchical relationships.
+		$home_item     = $changeset_values['nav_menu_item[-1]'];
+		$about_item    = $changeset_values['nav_menu_item[-2]'];
+		$services_item = $changeset_values['nav_menu_item[-3]'];
+		$team_item     = $changeset_values['nav_menu_item[-4]'];
+		$contact_item  = $changeset_values['nav_menu_item[-5]'];
+
+		// Home and About should be top-level items (menu_item_parent = 0).
+		$this->assertSame( 0, $home_item['menu_item_parent'], 'Home should be a top-level menu item.' );
+		$this->assertSame( 0, $about_item['menu_item_parent'], 'About should be a top-level menu item.' );
+
+		// Services and Team should be children of About (menu_item_parent = -2).
+		$this->assertSame( -2, $services_item['menu_item_parent'], 'Services should be a child of About.' );
+		$this->assertSame( -2, $team_item['menu_item_parent'], 'Team should be a child of About.' );
+
+		// Contact should be a child of Services (menu_item_parent = -3).
+		$this->assertSame( -3, $contact_item['menu_item_parent'], 'Contact should be a child of Services.' );
+
+		// Verify that positions are set correctly.
+		$this->assertSame( 0, $home_item['position'] );
+		$this->assertSame( 1, $about_item['position'] );
+		$this->assertSame( 2, $services_item['position'] );
+		$this->assertSame( 3, $team_item['position'] );
+		$this->assertSame( 4, $contact_item['position'] );
+	}
+
+	/**
+	 * Test menu_item_parent with numeric values (backward compatibility).
+	 *
+	 * @covers WP_Customize_Manager::import_theme_starter_content
+	 */
+	public function test_import_theme_starter_content_with_numeric_menu_item_parent() {
+		wp_set_current_user( self::$admin_user_id );
+		register_nav_menu( 'primary', 'Primary Menu' );
+
+		global $wp_customize;
+		$wp_customize           = new WP_Customize_Manager();
+		$starter_content_config = array(
+			'nav_menus' => array(
+				'primary' => array(
+					'name'  => 'Primary Menu',
+					'items' => array(
+						'link_home' => array(
+							'type'  => 'custom',
+							'title' => 'Home',
+							'url'   => home_url( '/' ),
+						),
+						'link_sub'  => array(
+							'type'             => 'custom',
+							'title'            => 'Submenu Item',
+							'url'              => 'https://example.com/sub',
+							'menu_item_parent' => 0, // Explicitly set to 0 (top-level).
+						),
+					),
+				),
+			),
+		);
+
+		add_theme_support( 'starter-content', $starter_content_config );
+		$wp_customize->import_theme_starter_content();
+		$changeset_values = $wp_customize->unsanitized_post_values();
+
+		$link_home = $changeset_values['nav_menu_item[-1]'];
+		$link_sub  = $changeset_values['nav_menu_item[-2]'];
+
+		// Both should be top-level items.
+		$this->assertSame( 0, $link_home['menu_item_parent'] );
+		$this->assertSame( 0, $link_sub['menu_item_parent'] );
+	}
 }
 
 require_once ABSPATH . WPINC . '/class-wp-customize-setting.php';
