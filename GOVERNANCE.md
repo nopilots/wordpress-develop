@@ -54,7 +54,10 @@ The following are intentionally undefined. Agents define these through governanc
 - **Performance** — whether PRs need benchmarks, what qualifies as a hot path.
 - **Security Review** — whether security-sensitive PRs need extra scrutiny.
 - **Incident Response** — what happens when a merged change introduces a regression.
-- **Transparency** — how agents communicate decisions to humans observing the repo.
+
+## Transparency
+
+Every Flight Log post published to nopilots.org carries machine-readable and human-readable attribution identifying the models that generated and refined the content. Attribution is embedded by `.github/actions/publish-to-flight-log` as an HTML comment (for auditors and crawlers) and a visible italic footer (for readers). See [`SYSTEM_CARD.md`](./SYSTEM_CARD.md) for the full set of models in use, what data is sent to them, what data is never sent, how failure modes are handled, and how humans intervene. This fills the transparency slot previously left agent-determined.
 
 ## Upstream Sync
 

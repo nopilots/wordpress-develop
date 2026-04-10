@@ -34,6 +34,10 @@ inputs:
     description: Skip the post refinement step
     required: false
     default: 'false'
+  generator-model:
+    description: Model that generated the original content (e.g., openai/gpt-4o-mini). Leave empty if content was hand-crafted or passed through raw.
+    required: false
+    default: ''
 
 outputs:
   post-id:
@@ -60,6 +64,7 @@ runs:
         POST_EXCERPT: ${{ inputs.excerpt }}
         AUTHOR_SLUG: ${{ inputs.author-slug }}
         SKIP_REFINEMENT: ${{ inputs.skip-refinement }}
+        GENERATOR_MODEL: ${{ inputs.generator-model }}
       with:
         script: |
           const wpUrl = process.env.WP_URL;
@@ -164,61 +169,90 @@ runs:
           core.setOutput('post-link', postLink);
           core.info(`Published: ${postLink}`);
 
+          // Read post back (gets content with WP filters applied) for refinement input and final update baseline
+          const postData = await wpGraphQL(
+            `query($id: ID!) { post(id: $id, idType: ID) { title content } }`,
+            { id: postId }
+          );
+          let finalContent = postData.post?.content || process.env.POST_CONTENT;
+          let refinementModel = '';
+          const generatorModel = process.env.GENERATOR_MODEL || '';
+
           // Refine
           if (process.env.SKIP_REFINEMENT !== 'true') {
-          try {
-            const postData = await wpGraphQL(
-              `query($id: ID!) { post(id: $id, idType: ID) { title content } }`,
-              { id: postId }
-            );
-            const postContent = postData.post?.content || '';
+            refinementModel = ['openai/gpt-4o-mini', 'anthropic/claude-haiku'][new Date().getHours() % 2];
+            try {
+              const refineRes = await fetch('https://models.github.ai/inference/chat/completions', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${process.env.GITHUB_TOKEN}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  model: refinementModel,
+                  messages: [{
+                    role: 'system',
+                    content: 'You are a copy editor for "No Pilots" — dispatches from an autonomous AI-governed WordPress project. Voice: direct, technical, no filler. Kill any AI slop — no "we are excited," no "we are pleased," no "in conclusion," no "as we continue." Start with what matters. Posts should be concise, well-structured HTML, and only show what is necessary. IMPORTANT: Output raw HTML only. No markdown code fences. No explanation. Just the HTML.',
+                  }, {
+                    role: 'user',
+                    content: `${process.env.REFINE_PROMPT}\n\nIf the post is already good, reply with exactly: NO_CHANGES\n\nOtherwise reply with ONLY the refined HTML. No markdown, no code fences, no explanation.\n\nCurrent content:\n${finalContent.substring(0, 3000)}`,
+                  }],
+                  max_tokens: 1000,
+                  temperature: 0.3,
+                }),
+              });
 
-            const refineRes = await fetch('https://models.github.ai/inference/chat/completions', {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${process.env.GITHUB_TOKEN}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                model: ['openai/gpt-4o-mini', 'anthropic/claude-haiku'][new Date().getHours() % 2],
-                messages: [{
-                  role: 'system',
-                  content: 'You are a copy editor for "No Pilots" — dispatches from an autonomous AI-governed WordPress project. Voice: direct, technical, no filler. Kill any AI slop — no "we are excited," no "we are pleased," no "in conclusion," no "as we continue." Start with what matters. Posts should be concise, well-structured HTML, and only show what is necessary. IMPORTANT: Output raw HTML only. No markdown code fences. No explanation. Just the HTML.',
-                }, {
-                  role: 'user',
-                  content: `${process.env.REFINE_PROMPT}\n\nIf the post is already good, reply with exactly: NO_CHANGES\n\nOtherwise reply with ONLY the refined HTML. No markdown, no code fences, no explanation.\n\nCurrent content:\n${postContent.substring(0, 3000)}`,
-                }],
-                max_tokens: 1000,
-                temperature: 0.3,
-              }),
-            });
-
-            if (refineRes.ok) {
-              const refineResult = await refineRes.json();
-              let refined = refineResult.choices?.[0]?.message?.content || '';
-              // Strip markdown artifacts from model output
-              refined = refined
-                .replace(/^```html?\n?/i, '').replace(/\n?```$/g, '')
-                .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-                .replace(/`([^`]+)`/g, '<code>$1</code>')
-                .trim();
-              if (refined && !refined.includes('NO_CHANGES')) {
-                await wpGraphQL(
-                  `mutation($id: ID!, $content: String!) {
-                    updatePost(input: { id: $id, content: $content }) { post { id } }
-                  }`,
-                  { id: postId, content: refined }
-                );
-                core.info('Post refined.');
+              if (refineRes.ok) {
+                const refineResult = await refineRes.json();
+                let refined = refineResult.choices?.[0]?.message?.content || '';
+                // Strip markdown artifacts from model output
+                refined = refined
+                  .replace(/^```html?\n?/i, '').replace(/\n?```$/g, '')
+                  .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                  .replace(/`([^`]+)`/g, '<code>$1</code>')
+                  .trim();
+                if (refined && !refined.includes('NO_CHANGES')) {
+                  finalContent = refined;
+                  core.info('Post refined.');
+                } else {
+                  // Refinement attempted but content was already good — don't credit a model that didn't change anything
+                  refinementModel = '';
+                  core.info('Post quality: good, no refinement needed.');
+                }
               } else {
-                core.info('Post quality: good, no refinement needed.');
+                refinementModel = '';
+                core.warning(`Refinement HTTP ${refineRes.status}`);
               }
+            } catch (qErr) {
+              refinementModel = '';
+              core.warning(`Post refinement failed: ${qErr.message}`);
             }
-          } catch (qErr) {
-            core.warning(`Post refinement failed: ${qErr.message}`);
-          }
           } else {
             core.info('Refinement skipped.');
+          }
+
+          // Build AI attribution block (EU AI Act Art. 50 compliance)
+          // Machine-readable HTML comment + visible reader-facing footer
+          const SYSTEM_CARD_URL = 'https://github.com/nopilots/wordpress-develop/blob/autopilot/SYSTEM_CARD.md';
+          const genLabel = generatorModel || 'none';
+          const refLabel = refinementModel || 'none';
+          const attributionBlock = [
+            `<!-- AI-GENERATED: nopilots autonomous system | generator: ${genLabel} | refinement: ${refLabel} | system-card: ${SYSTEM_CARD_URL} -->`,
+            '<hr />',
+            `<p><em><small>This dispatch was generated by the No Pilots autonomous system. Content: <code>${genLabel}</code>. Refinement: <code>${refLabel}</code>. <a href="${SYSTEM_CARD_URL}">System card</a>.</small></em></p>`,
+          ].join('\n');
+
+          // Final update: write finalContent + attribution back to the post (unconditional so every post carries attribution)
+          try {
+            await wpGraphQL(
+              `mutation($id: ID!, $content: String!) {
+                updatePost(input: { id: $id, content: $content }) { post { id } }
+              }`,
+              { id: postId, content: `${finalContent}\n\n${attributionBlock}` }
+            );
+            core.info(`Attribution applied. generator=${genLabel} refinement=${refLabel}`);
+          } catch (attrErr) {
+            core.warning(`Attribution update failed: ${attrErr.message}`);
           }
 
     - name: Report publish failure
