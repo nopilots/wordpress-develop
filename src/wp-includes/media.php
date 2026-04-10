@@ -2378,17 +2378,26 @@ function wp_iframe_tag_add_loading_attr( $iframe, $context ) {
 	 * Get loading attribute value to use. This must occur before the conditional check below so that even iframes that
 	 * are ineligible for being lazy-loaded are considered.
 	 */
+	$processor = new WP_HTML_Tag_Processor( $iframe );
+
+	// Find the iframe tag.
+	if ( ! $processor->next_tag( array( 'tag_name' => 'IFRAME' ) ) ) {
+		return $iframe;
+	}
+
+	// Extract width and height attributes.
+	$width  = $processor->get_attribute( 'width' );
+	$height = $processor->get_attribute( 'height' );
+
+	// Convert width and height to numeric values, or null if not present/invalid.
+	$width_value  = is_numeric( $width ) ? (int) $width : null;
+	$height_value = is_numeric( $height ) ? (int) $height : null;
+
 	$optimization_attrs = wp_get_loading_optimization_attributes(
 		'iframe',
 		array(
-			/*
-			 * The concrete values for width and height are not important here for now
-			 * since fetchpriority is not yet supported for iframes.
-			 * TODO: Use WP_HTML_Tag_Processor to extract actual values once support is
-			 * added.
-			 */
-			'width'   => str_contains( $iframe, ' width="' ) ? 100 : null,
-			'height'  => str_contains( $iframe, ' height="' ) ? 100 : null,
+			'width'   => $width_value,
+			'height'  => $height_value,
 			// This function is never called when a 'loading' attribute is already present.
 			'loading' => null,
 		),
@@ -2396,7 +2405,8 @@ function wp_iframe_tag_add_loading_attr( $iframe, $context ) {
 	);
 
 	// Iframes should have source and dimension attributes for the `loading` attribute to be added.
-	if ( ! str_contains( $iframe, ' src="' ) || ! str_contains( $iframe, ' width="' ) || ! str_contains( $iframe, ' height="' ) ) {
+	$src = $processor->get_attribute( 'src' );
+	if ( ! is_string( $src ) || '' === $src || null === $width_value || null === $height_value ) {
 		return $iframe;
 	}
 
@@ -2422,7 +2432,9 @@ function wp_iframe_tag_add_loading_attr( $iframe, $context ) {
 			$value = 'lazy';
 		}
 
-		return str_replace( '<iframe', '<iframe loading="' . esc_attr( $value ) . '"', $iframe );
+		// Use WP_HTML_Tag_Processor to add the loading attribute.
+		$processor->set_attribute( 'loading', $value );
+		return $processor->get_updated_html();
 	}
 
 	return $iframe;

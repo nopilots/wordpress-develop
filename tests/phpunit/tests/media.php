@@ -3439,11 +3439,8 @@ EOF;
 		$iframe = "<iframe src='https://www.example.com' width='640' height='360'></iframe>";
 		$iframe = wp_iframe_tag_add_loading_attr( $iframe, 'test' );
 
-		$this->assertStringNotContainsString( ' loading=', $iframe );
-
-		// Test specifically that the attribute is not there with double-quotes,
-		// to avoid regressions.
-		$this->assertStringNotContainsString( ' loading="lazy"', $iframe );
+		// WP_HTML_Tag_Processor can read single-quoted attributes and outputs double-quotes.
+		$this->assertStringContainsString( ' loading="lazy"', $iframe );
 	}
 
 	/**
@@ -3458,8 +3455,7 @@ EOF;
 	}
 
 	/**
-	 * @ticket 52768
-	 * @ticket 58773
+	 * @ticket 50756
 	 */
 	public function test_wp_iframe_tag_add_loading_attr_include_wp_embed() {
 		$iframe   = '<iframe src="https://www.example.com" width="640" height="360"></iframe>';
@@ -3468,6 +3464,83 @@ EOF;
 		$iframe   = wp_iframe_tag_add_loading_attr( $iframe, 'test' );
 
 		$this->assertStringContainsString( ' loading="lazy"', $iframe );
+	}
+
+	/**
+	 * Tests that wp_iframe_tag_add_loading_attr extracts actual numeric width values.
+	 */
+	public function test_wp_iframe_tag_add_loading_attr_extracts_width() {
+		$iframe = '<iframe src="https://www.example.com" width="1920" height="1080"></iframe>';
+		$result = wp_iframe_tag_add_loading_attr( $iframe, 'test' );
+
+		$this->assertStringContainsString( ' loading="lazy"', $result );
+		$this->assertStringContainsString( 'width="1920"', $result );
+	}
+
+	/**
+	 * Tests that wp_iframe_tag_add_loading_attr extracts actual numeric height values.
+	 */
+	public function test_wp_iframe_tag_add_loading_attr_extracts_height() {
+		$iframe = '<iframe src="https://www.example.com" width="640" height="480"></iframe>';
+		$result = wp_iframe_tag_add_loading_attr( $iframe, 'test' );
+
+		$this->assertStringContainsString( ' loading="lazy"', $result );
+		$this->assertStringContainsString( 'height="480"', $result );
+	}
+
+	/**
+	 * Tests that wp_iframe_tag_add_loading_attr handles non-numeric width values.
+	 */
+	public function test_wp_iframe_tag_add_loading_attr_with_invalid_width() {
+		$iframe = '<iframe src="https://www.example.com" width="100%" height="360"></iframe>';
+		$result = wp_iframe_tag_add_loading_attr( $iframe, 'test' );
+
+		// Should not add loading attribute when width is non-numeric.
+		$this->assertStringNotContainsString( ' loading=', $result );
+	}
+
+	/**
+	 * Tests that wp_iframe_tag_add_loading_attr handles non-numeric height values.
+	 */
+	public function test_wp_iframe_tag_add_loading_attr_with_invalid_height() {
+		$iframe = '<iframe src="https://www.example.com" width="640" height="auto"></iframe>';
+		$result = wp_iframe_tag_add_loading_attr( $iframe, 'test' );
+
+		// Should not add loading attribute when height is non-numeric.
+		$this->assertStringNotContainsString( ' loading=', $result );
+	}
+
+	/**
+	 * Tests that wp_iframe_tag_add_loading_attr handles unquoted attribute values.
+	 */
+	public function test_wp_iframe_tag_add_loading_attr_with_unquoted_attributes() {
+		$iframe = '<iframe src=https://www.example.com width=640 height=360></iframe>';
+		$result = wp_iframe_tag_add_loading_attr( $iframe, 'test' );
+
+		// WP_HTML_Tag_Processor can read unquoted attributes.
+		$this->assertStringContainsString( ' loading="lazy"', $result );
+	}
+
+	/**
+	 * Tests that wp_iframe_tag_add_loading_attr handles mixed quote styles.
+	 */
+	public function test_wp_iframe_tag_add_loading_attr_with_mixed_quotes() {
+		$iframe = '<iframe src="https://www.example.com" width=\'640\' height="360"></iframe>';
+		$result = wp_iframe_tag_add_loading_attr( $iframe, 'test' );
+
+		// WP_HTML_Tag_Processor can read mixed quote styles.
+		$this->assertStringContainsString( ' loading="lazy"', $result );
+	}
+
+	/**
+	 * Tests that wp_iframe_tag_add_loading_attr handles empty src attribute.
+	 */
+	public function test_wp_iframe_tag_add_loading_attr_with_empty_src() {
+		$iframe = '<iframe src="" width="640" height="360"></iframe>';
+		$result = wp_iframe_tag_add_loading_attr( $iframe, 'test' );
+
+		// Should not add loading attribute when src is empty.
+		$this->assertStringNotContainsString( ' loading=', $result );
 	}
 
 	/**
