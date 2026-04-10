@@ -1,0 +1,258 @@
+name: Integrity Auditor
+
+on:
+  schedule:
+    - cron: '0 5 * * *'  # Daily 05:00 UTC (runs before Health Check at 06:00)
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: read
+  contents: read
+
+concurrency:
+  group: agent-auditor
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run integrity audit
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // Kill switch
+            const { data: killSwitch } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'system:off', per_page: 1,
+            });
+            if (killSwitch.length > 0) {
+              core.info('System is off. Audit skipped.');
+              return;
+            }
+
+            const findings = [];
+            const selfRepairs = [];
+            const DAY_MS = 24 * 60 * 60 * 1000;
+            const HOUR_MS = 60 * 60 * 1000;
+
+            // ================================================================
+            // 1. Self-repair invariant: closed agent issues should never carry
+            //    active status:* labels. The safety workflow's stale-issue
+            //    handler already strips status:in-progress on auto-close, but
+            //    issues closed by other paths (human action, agent comments,
+            //    workflow cleanup) may still carry stale status labels.
+            // ================================================================
+            const STATUS_LABELS = ['status:triage', 'status:ready', 'status:in-progress'];
+            try {
+              const { data: closedAgentIssues } = await github.rest.issues.listForRepo({
+                owner, repo, state: 'closed', labels: 'agent',
+                per_page: 100, sort: 'updated', direction: 'desc',
+              });
+              for (const issue of closedAgentIssues) {
+                const staleStatusLabels = issue.labels
+                  .map((l) => l.name)
+                  .filter((n) => STATUS_LABELS.includes(n));
+                for (const label of staleStatusLabels) {
+                  try {
+                    await github.rest.issues.removeLabel({
+                      owner, repo, issue_number: issue.number, name: label,
+                    });
+                    selfRepairs.push(`#${issue.number}: stripped stale \`${label}\` label from closed issue`);
+                    core.info(`Self-repaired: #${issue.number} \`${label}\``);
+                  } catch (e) {
+                    // Label may have been removed concurrently — not an error
+                  }
+                }
+              }
+            } catch (e) {
+              core.warning(`Self-repair sweep failed: ${e.message}`);
+            }
+
+            // ================================================================
+            // 2. Claim audit: scan recent agent-posted comments for factual
+            //    claims about time (age, "closed N days ago", "in progress
+            //    for N days") and verify arithmetic against actual timestamps.
+            // ================================================================
+            const sinceIso = new Date(Date.now() - 48 * HOUR_MS).toISOString();
+            let recentIssues = [];
+            try {
+              const { data } = await github.rest.issues.listForRepo({
+                owner, repo, labels: 'agent', state: 'all',
+                per_page: 50, sort: 'updated', direction: 'desc', since: sinceIso,
+              });
+              recentIssues = data;
+            } catch (e) {
+              core.warning(`Could not fetch recent issues: ${e.message}`);
+            }
+
+            // Helper: is this comment body authored by an agent (bot or github-actions)?
+            const isAgentComment = (c) =>
+              c.user?.type === 'Bot' ||
+              c.user?.login?.endsWith('[bot]') ||
+              c.user?.login === 'github-actions';
+
+            // Verify claim: "in progress for >N days" / "in progress for N days"
+            // Ground truth: (comment.created_at - issue.created_at) in days
+            function auditInProgressDuration(text, comment, issue) {
+              const match = text.match(/in\s+progress\s+for\s+>?\s*(\d+)\s*(day|days|hour|hours|h)/i);
+              if (!match) return null;
+              const claimedValue = parseInt(match[1]);
+              const unit = match[2].toLowerCase();
+              const claimedMs = /hour|h/.test(unit) ? claimedValue * HOUR_MS : claimedValue * DAY_MS;
+              const commentTime = new Date(comment.created_at).getTime();
+              const issueTime = new Date(issue.created_at).getTime();
+              const actualMs = commentTime - issueTime;
+              // Claim is "greater than" — so actual should be at least claimedMs.
+              // We tolerate a 10% slop (minimum 1 hour) for rounding.
+              const tolerance = Math.max(HOUR_MS, claimedMs * 0.1);
+              if (actualMs + tolerance < claimedMs) {
+                const actualHours = (actualMs / HOUR_MS).toFixed(1);
+                return {
+                  claim: match[0],
+                  claimed: `>${claimedValue} ${unit}`,
+                  actual: `${actualHours}h at time of comment`,
+                  delta: `claim overstates by ~${((claimedMs - actualMs) / HOUR_MS).toFixed(1)}h`,
+                };
+              }
+              return null;
+            }
+
+            // Verify claim: "closed N days ago" / "closed N hours ago"
+            function auditClosedAgo(text, comment, issue) {
+              const match = text.match(/closed\s+(\d+)\s*(day|days|hour|hours|h)\s+ago/i);
+              if (!match || !issue.closed_at) return null;
+              const claimedValue = parseInt(match[1]);
+              const unit = match[2].toLowerCase();
+              const claimedMs = /hour|h/.test(unit) ? claimedValue * HOUR_MS : claimedValue * DAY_MS;
+              const commentTime = new Date(comment.created_at).getTime();
+              const closedTime = new Date(issue.closed_at).getTime();
+              const actualMs = commentTime - closedTime;
+              const tolerance = Math.max(HOUR_MS, claimedMs * 0.1);
+              if (Math.abs(actualMs - claimedMs) > tolerance) {
+                const actualHours = (actualMs / HOUR_MS).toFixed(1);
+                return {
+                  claim: match[0],
+                  claimed: `${claimedValue} ${unit}`,
+                  actual: `${actualHours}h before comment`,
+                  delta: `off by ~${(Math.abs(claimedMs - actualMs) / HOUR_MS).toFixed(1)}h`,
+                };
+              }
+              return null;
+            }
+
+            for (const issue of recentIssues.slice(0, 40)) {
+              try {
+                const { data: comments } = await github.rest.issues.listComments({
+                  owner, repo, issue_number: issue.number, per_page: 30,
+                });
+                for (const comment of comments.filter(isAgentComment)) {
+                  const text = comment.body || '';
+                  for (const auditor of [auditInProgressDuration, auditClosedAgo]) {
+                    const result = auditor(text, comment, issue);
+                    if (result) {
+                      findings.push({
+                        kind: 'time-claim',
+                        subject: `#${issue.number}`,
+                        location: comment.html_url,
+                        author: comment.user?.login || 'unknown',
+                        ...result,
+                      });
+                    }
+                  }
+                }
+              } catch (e) {
+                core.warning(`Failed to audit #${issue.number}: ${e.message}`);
+              }
+            }
+
+            // ================================================================
+            // 3. Report
+            // ================================================================
+            core.info(`Audit complete. Self-repairs: ${selfRepairs.length}. Hallucinations: ${findings.length}.`);
+            for (const r of selfRepairs) core.info(`  [fix] ${r}`);
+            for (const f of findings) core.info(`  [lie] ${f.subject}: "${f.claim}" — ${f.delta}`);
+
+            // If nothing to report, optionally auto-close any open [Integrity] issue
+            // from a previous run where the findings are now resolved.
+            if (findings.length === 0) {
+              const { data: openIntegrity } = await github.rest.issues.listForRepo({
+                owner, repo, state: 'open', per_page: 20,
+              });
+              for (const existing of openIntegrity.filter((i) => i.title.startsWith('[Integrity]'))) {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: existing.number,
+                  body: 'Auditor re-ran and found no hallucinations. Auto-closing.',
+                });
+                await github.rest.issues.update({
+                  owner, repo, issue_number: existing.number,
+                  state: 'closed', state_reason: 'completed',
+                });
+                core.info(`Auto-closed stale integrity issue #${existing.number}`);
+              }
+              return;
+            }
+
+            // Build or update today's integrity issue
+            const today = new Date().toISOString().substring(0, 10);
+            const title = `[Integrity] ${findings.length} hallucination${findings.length === 1 ? '' : 's'} detected (${today})`;
+
+            const body = [
+              '## Hallucinations detected',
+              '',
+              'The Integrity Auditor checks agent-generated claims against ground truth. The following claims disagree with reality:',
+              '',
+              ...findings.map((f, i) => [
+                `### ${i + 1}. ${f.subject}`,
+                `**Location:** ${f.location}`,
+                `**Author:** \`${f.author}\``,
+                `**Claim:** _${f.claim}_`,
+                `**Claimed value:** ${f.claimed}`,
+                `**Actual:** ${f.actual}`,
+                `**Drift:** ${f.delta}`,
+                '',
+              ].join('\n')),
+              selfRepairs.length > 0 ? [
+                '',
+                `## Self-repairs applied (${selfRepairs.length})`,
+                '',
+                ...selfRepairs.map((r) => `- ${r}`),
+                '',
+              ].join('\n') : '',
+              '## What to do',
+              '',
+              '1. Inspect each flagged comment and identify the root workflow that produced the false claim (the author is usually the `github-actions` bot or a specific `nopilots-*[bot]`).',
+              '2. Find the template string or time calculation in the offending workflow YAML (grep for the claim text).',
+              '3. Fix the template or arithmetic so code and human-readable output cannot drift apart — lift thresholds into named constants and interpolate the actual values.',
+              '4. Optionally post a correction comment on the flagged issue(s) so the record is honest.',
+              '',
+              'The auditor will re-run tomorrow at 05:00 UTC and auto-close this issue if all hallucinations have been resolved (either fixed at source or the false comments have aged out of the 48-hour audit window).',
+              '',
+              '---',
+              '',
+              '_Generated by `agent-auditor.yml` — see `SYSTEM_CARD.md` for the broader integrity/transparency philosophy._',
+            ].filter(Boolean).join('\n');
+
+            // Upsert — update today's issue if it exists, otherwise create
+            const { data: existingIntegrity } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', per_page: 20,
+            });
+            const existing = existingIntegrity.find(
+              (i) => i.title === title || i.title.startsWith(`[Integrity] ${findings.length === 1 ? '1 hallucination' : 'hallucination'}`)
+            );
+
+            if (existing) {
+              await github.rest.issues.update({
+                owner, repo, issue_number: existing.number, title, body,
+              });
+              core.info(`Updated integrity issue #${existing.number}`);
+            } else {
+              const { data: created } = await github.rest.issues.create({
+                owner, repo, title, body,
+                labels: ['agent', 'needs:human'],
+              });
+              core.info(`Created integrity issue #${created.number}`);
+            }
