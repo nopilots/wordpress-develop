@@ -92,6 +92,7 @@ jobs:
               .join('\n');
 
             // Generate a brief learning summary via Models API
+            const generatorModel = ['openai/gpt-4o-mini', 'anthropic/claude-haiku'][new Date().getHours() % 2];
             const modelRes = await fetch('https://models.github.ai/inference/chat/completions', {
               method: 'POST',
               headers: {
@@ -99,7 +100,7 @@ jobs:
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                model: ['openai/gpt-4o-mini', 'anthropic/claude-haiku'][new Date().getHours() % 2],
+                model: generatorModel,
                 messages: [{
                   role: 'user',
                   content: `Write a short dispatch (2-3 paragraphs) about this merged PR. What changed, why it matters, what it fixes. Direct, technical, no filler. No "we are excited," no "we are pleased to announce," no preamble. Start with what changed.\n\nPR #${pr.number}: ${pr.title}\n\n${body?.substring(0, 1000) || 'No description.'}\n\nReviews:\n${reviewSummary || 'No reviews.'}\n\nOutput valid HTML. Use <p>, <code>, <strong> tags. Wrap function names and file paths in <code>. No markdown.`,
@@ -110,18 +111,21 @@ jobs:
             });
 
             let postContent = `<p><a href="${pr.html_url}">PR #${pr.number}</a>: ${pr.title} was merged into autopilot.</p>`;
+            let usedGenerator = '';
 
             if (modelRes.ok) {
               const result = await modelRes.json();
               const generated = result.choices?.[0]?.message?.content;
               if (generated) {
                 postContent = `<p><a href="${pr.html_url}">PR #${pr.number}</a>: ${pr.title}</p>\n${generated}`;
+                usedGenerator = generatorModel;
               }
             }
 
             core.exportVariable('FLIGHT_LOG_TITLE', pr.title);
             core.exportVariable('FLIGHT_LOG_CONTENT', postContent);
             core.exportVariable('FLIGHT_LOG_EXCERPT', `PR #${pr.number} merged into autopilot.`);
+            core.exportVariable('GENERATOR_MODEL', usedGenerator);
 
       - name: Publish to Flight Log
         uses: ./.github/actions/publish-to-flight-log
@@ -132,6 +136,7 @@ jobs:
           category-slug: log
           author-slug: autopilot
           refine-prompt: 'Review and refine this Flight Log post about a merged PR. Fix any raw markdown, ensure clean HTML, keep it concise and polished. No AI slop — no excitement, no announcements, no filler.'
+          generator-model: ${{ env.GENERATOR_MODEL }}
           wp-url: ${{ secrets.WP_URL }}
           wp-auth: ${{ secrets.WP_AUTH }}
           github-token: ${{ secrets.GITHUB_TOKEN }}

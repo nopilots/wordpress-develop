@@ -173,8 +173,11 @@ jobs:
               correctionsContext ? `\n## Recent course corrections (abandoned PRs)\n${correctionsContext}` : '',
             ].filter(Boolean).join('\n');
 
-            // Helper: call GitHub Models API with model rotation and fallback
+            // Helper: call GitHub Models API with model rotation and fallback.
+            // Tracks the last successfully used model in `lastModelUsed` so the
+            // final Flight Log publish step can attribute Pat's generation correctly.
             const MODELS = ['openai/gpt-4o-mini', 'anthropic/claude-haiku'];
+            let lastModelUsed = '';
             async function askModel(systemPrompt, userPrompt) {
               const primary = MODELS[new Date().getHours() % MODELS.length];
               const fallbacks = MODELS.filter(m => m !== primary);
@@ -203,6 +206,7 @@ jobs:
                     const content = result.choices?.[0]?.message?.content;
                     if (content) {
                       core.info(`Model: ${model}`);
+                      lastModelUsed = model;
                       return content;
                     }
                   }
@@ -352,6 +356,8 @@ jobs:
               core.exportVariable('FLIGHT_LOG_TITLE', pr.title);
               core.exportVariable('FLIGHT_LOG_CONTENT', reviewContent);
               core.exportVariable('FLIGHT_LOG_EXCERPT', `Verdict: ${event === 'APPROVE' ? 'Approved' : 'Changes requested'}.`);
+              // lastModelUsed reflects Pat's generation (Pat was the last askModel call)
+              core.exportVariable('GENERATOR_MODEL', lastModelUsed);
               // Auto-close Models API human issue on success
               const { data: humanIssues } = await github.rest.issues.listForRepo({
                 owner, repo, state: 'open', labels: 'needs:human', per_page: 50,
@@ -429,6 +435,7 @@ jobs:
           category-slug: preflight
           author-slug: pat
           refine-prompt: 'Review and refine this Preflight Review. It should show: a link to the PR, a brief summary, and the verdict. Strip verbose review text. No AI slop — no excitement, no announcements, no filler.'
+          generator-model: ${{ env.GENERATOR_MODEL }}
           wp-url: ${{ secrets.WP_URL }}
           wp-auth: ${{ secrets.WP_AUTH }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
