@@ -252,45 +252,49 @@ jobs:
               }
             }
 
-            // 1. Doc reviews code quality
-            let docReview = null;
-            if (!docDone) {
+            // 1 & 2. Doc and Dalton review in parallel (independent of each other)
+            async function runDocReview() {
+              if (docDone) {
+                core.info('Doc already reviewed.');
+                return existingComments.find(c => c.body?.includes('**Doc**'))?.body || null;
+              }
               const docPrompt = fs.readFileSync('.github/agent-personas/doc.md', 'utf8');
-              docReview = await askModel(docPrompt, `Review this pull request for code quality.\n\n${prContext}`);
-              // Validate rubric output
-              if (docReview && !docReview.includes('READABILITY:')) {
+              const review = await askModel(docPrompt, `Review this pull request for code quality.\n\n${prContext}`);
+              if (review && !review.includes('READABILITY:')) {
                 core.warning('Doc review missing rubric checklist.');
               }
-              if (docReview) {
-                await postAsApp(process.env.DOC_TOKEN, docReview);
+              if (review) {
+                await postAsApp(process.env.DOC_TOKEN, review);
                 core.info('Doc reviewed.');
               } else {
                 core.warning('Doc review failed — Models API unavailable.');
               }
-            } else {
-              docReview = existingComments.find(c => c.body?.includes('**Doc**'))?.body || null;
-              core.info('Doc already reviewed.');
+              return review;
             }
 
-            // 2. Dalton reviews security
-            let daltonReview = null;
-            if (!daltonDone) {
+            async function runDaltonReview() {
+              if (daltonDone) {
+                core.info('Dalton already reviewed.');
+                return existingComments.find(c => c.body?.includes('**Dalton**'))?.body || null;
+              }
               const daltonPrompt = fs.readFileSync('.github/agent-personas/dalton.md', 'utf8');
-              daltonReview = await askModel(daltonPrompt, `Review this pull request for security concerns.\n\n${prContext}`);
-              // Validate rubric output
-              if (daltonReview && !daltonReview.includes('INPUT_SANITIZATION:')) {
+              const review = await askModel(daltonPrompt, `Review this pull request for security concerns.\n\n${prContext}`);
+              if (review && !review.includes('INPUT_SANITIZATION:')) {
                 core.warning('Dalton review missing rubric checklist.');
               }
-              if (daltonReview) {
-                await postAsApp(process.env.DALTON_TOKEN, daltonReview);
+              if (review) {
+                await postAsApp(process.env.DALTON_TOKEN, review);
                 core.info('Dalton reviewed.');
               } else {
                 core.warning('Dalton review failed — Models API unavailable.');
               }
-            } else {
-              daltonReview = existingComments.find(c => c.body?.includes('**Dalton**'))?.body || null;
-              core.info('Dalton already reviewed.');
+              return review;
             }
+
+            const [docReview, daltonReview] = await Promise.all([
+              runDocReview().catch(e => { core.warning(`Doc review threw: ${e.message}`); return null; }),
+              runDaltonReview().catch(e => { core.warning(`Dalton review threw: ${e.message}`); return null; }),
+            ]);
 
             // 3. Pat reads summaries and makes the decision
             if (patDone) {
