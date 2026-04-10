@@ -56,21 +56,33 @@ jobs:
               labels: 'agent',
               per_page: 100,
             });
-            // Auto-close stale in-progress issues >7 days old
+            // Auto-close stale in-progress issues older than the threshold below
+            const STALE_IN_PROGRESS_MS = 6 * 60 * 60 * 1000; // 6 hours
+            const STALE_IN_PROGRESS_LABEL = '6 hours';
             const stale = issues
               .filter(i =>
                 i.labels.some(l => l.name === 'status:in-progress') &&
-                (Date.now() - new Date(i.created_at)) > 6 * 60 * 60 * 1000
+                (Date.now() - new Date(i.created_at)) > STALE_IN_PROGRESS_MS
               )
               .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
               .slice(0, 3);
 
             for (const issue of stale) {
+              const ageMs = Date.now() - new Date(issue.created_at).getTime();
+              const ageHours = Math.round(ageMs / (60 * 60 * 1000));
               await github.rest.issues.createComment({
                 owner, repo,
                 issue_number: issue.number,
-                body: 'Auto-closing: issue has been in progress for >7 days without resolution.',
+                body: `Auto-closing: issue has been in progress for ${ageHours}h (threshold: ${STALE_IN_PROGRESS_LABEL}).`,
               });
+              // Remove status:in-progress label so closed issues don't carry a stale active-work signal
+              try {
+                await github.rest.issues.removeLabel({
+                  owner, repo,
+                  issue_number: issue.number,
+                  name: 'status:in-progress',
+                });
+              } catch (e) { /* label may not exist */ }
               await github.rest.issues.update({
                 owner, repo,
                 issue_number: issue.number,
