@@ -22,12 +22,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Read prior changelog from Flight Log
+        id: read-changelog
+        uses: ./.github/actions/read-from-flight-log
+        with:
+          category-slug: changelog
+          count: '3'
+          wp-url: ${{ secrets.WP_URL }}
+          wp-auth: ${{ secrets.WP_AUTH }}
+
       - name: Calculate and publish metrics
         uses: actions/github-script@v7
         env:
           WP_URL: ${{ secrets.WP_URL }}
           WP_AUTH: ${{ secrets.WP_AUTH }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FL_CHANGELOG: ${{ steps.read-changelog.outputs.summary }}
         with:
           script: |
             const owner = context.repo.owner;
@@ -100,6 +110,8 @@ jobs:
               `<tr><td>Backlog (ready)</td><td>${readyIssues.length}</td></tr>`,
               `<tr><td>Backlog (triage)</td><td>${triageIssues.length}</td></tr>`,
               `</table>`,
+              '',
+              process.env.FL_CHANGELOG ? `<h2>Prior Changelog Context</h2><p>${process.env.FL_CHANGELOG}</p>` : '',
             ].filter(Boolean).join('\n');
 
             const excerpt = `${mergedPRs.length} merged. ${approvalRate}% approval. ${recentHalts.length} incidents.`;

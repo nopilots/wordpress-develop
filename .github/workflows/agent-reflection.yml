@@ -21,8 +21,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Read prior corrections from Flight Log
+        id: read-corrections
+        uses: ./.github/actions/read-from-flight-log
+        with:
+          category-slug: corrections
+          count: '5'
+          wp-url: ${{ secrets.WP_URL }}
+          wp-auth: ${{ secrets.WP_AUTH }}
+
+      - name: Read prior log from Flight Log
+        id: read-log
+        uses: ./.github/actions/read-from-flight-log
+        with:
+          category-slug: log
+          count: '5'
+          wp-url: ${{ secrets.WP_URL }}
+          wp-auth: ${{ secrets.WP_AUTH }}
+
       - name: Create reflection issue
         uses: actions/github-script@v7
+        env:
+          FL_CORRECTIONS: ${{ steps.read-corrections.outputs.summary }}
+          FL_LOG: ${{ steps.read-log.outputs.summary }}
         with:
           script: |
             const owner = context.repo.owner;
@@ -123,6 +144,12 @@ jobs:
                 '',
                 `### Safety incidents (${haltList.length})`,
                 haltList.join('\n') || '_None._',
+                '',
+                `### Prior course corrections`,
+                process.env.FL_CORRECTIONS || '_None in Flight Log._',
+                '',
+                `### Recent activity log`,
+                process.env.FL_LOG || '_None in Flight Log._',
                 '',
                 `## Task`,
                 '',
