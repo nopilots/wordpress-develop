@@ -37,6 +37,42 @@ jobs:
               return;
             }
 
+            // Integrity sweep: unpin any closed issues that are still pinned.
+            // Elsewhere in this file (and in agent-reflection.yml, agent-notify.yml)
+            // defensive unpin calls swallow errors with `.catch(() => {})`, so closed
+            // issues can accumulate as ghost pins. This sweep guarantees the invariant
+            // "no closed issue stays pinned" regardless of upstream slip-ups.
+            try {
+              const pinnedResult = await github.graphql(`
+                query($owner: String!, $repo: String!) {
+                  repository(owner: $owner, name: $repo) {
+                    pinnedIssues(first: 3) {
+                      nodes {
+                        issue { id number title state }
+                      }
+                    }
+                  }
+                }
+              `, { owner, repo });
+              const pinned = pinnedResult.repository?.pinnedIssues?.nodes || [];
+              for (const entry of pinned) {
+                const issue = entry.issue;
+                if (issue && issue.state === 'CLOSED') {
+                  try {
+                    await github.graphql(
+                      `mutation($id: ID!) { unpinIssue(input: { issueId: $id }) { issue { id } } }`,
+                      { id: issue.id }
+                    );
+                    core.info(`Unpinned closed issue #${issue.number}: ${issue.title}`);
+                  } catch (e) {
+                    core.warning(`Failed to unpin closed issue #${issue.number}: ${e.message}`);
+                  }
+                }
+              }
+            } catch (e) {
+              core.warning(`Stale-pin sweep failed: ${e.message}`);
+            }
+
             let halt = false;
             const reasons = [];
 
