@@ -1,0 +1,43 @@
+##
+# Runs PHPStan static analysis on agent pull requests.
+#
+# Why this exists:
+#   PHPStan catches bugs that neither PHPCS nor PHPUnit can see: nullability
+#   errors, type mismatches, dead code, unreachable branches. The upstream
+#   static analysis workflow gates on the WordPress/ repo prefix, so agent
+#   PRs on the nopilots fork get no static-analysis coverage. This wrapper
+#   fills the gap by calling the same reusable workflow without the gate.
+#
+# What it does:
+#   Runs PHPStan against PHP changes in the PR. Violations appear as inline
+#   annotations on the PR diff, giving Dalton's security review a structured
+#   signal alongside the LLM-driven one.
+##
+name: Static Analysis (Agent)
+
+on:
+  pull_request:
+    branches:
+      - autopilot
+    paths:
+      - '**.php'
+      - 'composer.*'
+      - 'phpstan.neon.dist'
+      - '.github/workflows/agent-phpstan.yml'
+      - '.github/workflows/reusable-phpstan-static-analysis-v1.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: agent-phpstan-${{ github.event.pull_request.number || github.head_ref || github.sha }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  phpstan:
+    name: PHP
+    uses: ./.github/workflows/reusable-phpstan-static-analysis-v1.yml
+    permissions:
+      contents: read
+    with:
+      php-version: 'latest'

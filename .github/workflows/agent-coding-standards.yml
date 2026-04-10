@@ -1,0 +1,43 @@
+##
+# Runs WordPress coding standards checks (PHPCS) on agent pull requests.
+#
+# Why this exists:
+#   The upstream `coding-standards.yml` workflow gates on the WordPress/ repo
+#   prefix, so agent PRs on the nopilots fork get no PHPCS coverage. This
+#   wrapper calls the same reusable-coding-standards-php.yml the upstream
+#   uses, without the repo gate.
+#
+# What it does:
+#   Runs PHPCS against PHP changes in the PR. Violations appear as inline
+#   annotations on the PR diff — Doc's reviewer can see them without
+#   re-checking locally.
+##
+name: Coding Standards (Agent)
+
+on:
+  pull_request:
+    branches:
+      - autopilot
+    paths:
+      - '**.php'
+      - 'composer.*'
+      - 'phpcs.xml.dist'
+      - '.phpcs/**'
+      - '.github/workflows/agent-coding-standards.yml'
+      - '.github/workflows/reusable-coding-standards-php.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: agent-coding-standards-${{ github.event.pull_request.number || github.head_ref || github.sha }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  phpcs:
+    name: PHP
+    uses: ./.github/workflows/reusable-coding-standards-php.yml
+    permissions:
+      contents: read
+    with:
+      php-version: 'latest'

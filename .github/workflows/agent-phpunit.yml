@@ -1,0 +1,81 @@
+##
+# Runs the WordPress PHPUnit test suite against agent pull requests.
+#
+# Why this exists:
+#   The upstream `phpunit-tests.yml` gates job execution on
+#     `if: startsWith( github.repository, 'WordPress/' )`
+#   which means agent PRs on the nopilots fork get ZERO PHPUnit coverage from
+#   the upstream workflow. This file fills that gap by calling the same
+#   reusable-phpunit-tests-v3.yml workflow the upstream uses, without the
+#   repo-specific gate.
+#
+# What it does:
+#   Runs PHPUnit on a small-but-representative PHP version matrix against
+#   MySQL 8.4, in single-site mode. Matrix is intentionally tighter than
+#   upstream's full suite to stay fast and economical — 4 parallel jobs per
+#   agent PR. Since this repo is public, Actions minutes are $0 either way,
+#   but shorter matrices mean faster feedback to the test-gate in
+#   `agent-review.yml`.
+#
+# Trigger:
+#   Runs on PRs targeting the autopilot branch when files relevant to PHPUnit
+#   change. Does not run on every push — only when the diff could affect test
+#   outcomes.
+##
+name: PHPUnit (Agent)
+
+on:
+  pull_request:
+    branches:
+      - autopilot
+    paths:
+      - '**.php'
+      - 'tests/phpunit/**'
+      - 'composer.*'
+      - 'phpunit.xml.dist'
+      - 'phpunit.xml.dist.multisite'
+      - '.github/workflows/agent-phpunit.yml'
+      - '.github/workflows/reusable-phpunit-tests-*.yml'
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to test'
+        required: false
+
+# Cancels previous runs for the same PR when new commits push.
+concurrency:
+  group: agent-phpunit-${{ github.event.pull_request.number || github.head_ref || github.sha }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  test-with-mysql:
+    name: PHP ${{ matrix.php }}
+    uses: ./.github/workflows/reusable-phpunit-tests-v3.yml
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04]
+        # Matrix is deliberately smaller than upstream:
+        #   - 7.4: WordPress minimum still-supported PHP (caught compat regressions)
+        #   - 8.1: widely deployed production baseline
+        #   - 8.3: current stable WP target
+        #   - 8.4: latest released stable, catches forward-compat regressions
+        # Skipped vs upstream: 8.0 (EOL), 8.2 (covered by neighbors), 8.5 (unreleased),
+        # mariadb, memcached, and multisite permutations. Expand in a follow-up if
+        # coverage gaps show up in practice.
+        php: ['7.4', '8.1', '8.3', '8.4']
+        db-type: ['mysql']
+        db-version: ['8.4']
+        multisite: [false]
+    with:
+      os: ${{ matrix.os }}
+      php: ${{ matrix.php }}
+      db-type: ${{ matrix.db-type }}
+      db-version: ${{ matrix.db-version }}
+      multisite: ${{ matrix.multisite }}
+      phpunit-config: 'phpunit.xml.dist'
+      tests-domain: 'example.org'
