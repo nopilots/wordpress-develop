@@ -50,12 +50,12 @@ runs:
                 'Content-Type': 'application/json',
               },
               body: JSON.stringify({
-                query: `query($slug: [String], $count: Int) {
+                query: `query($slug: String!, $count: Int!) {
                   posts(first: $count, where: { categoryName: $slug, status: PUBLISH, orderby: { field: DATE, order: DESC } }) {
                     nodes { title content excerpt date }
                   }
                 }`,
-                variables: { slug: [slug], count },
+                variables: { slug, count },
               }),
             });
 
