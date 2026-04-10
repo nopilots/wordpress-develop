@@ -18,11 +18,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Read recent alerts from Flight Log
+        id: read-alerts
+        uses: ./.github/actions/read-from-flight-log
+        with:
+          category-slug: alerts
+          count: '5'
+          wp-url: ${{ secrets.WP_URL }}
+          wp-auth: ${{ secrets.WP_AUTH }}
+
       - name: Publish or remove sticky alert on Flight Log
         uses: actions/github-script@v7
         env:
           WP_URL: ${{ secrets.WP_URL }}
           WP_AUTH: ${{ secrets.WP_AUTH }}
+          FL_ALERTS: ${{ steps.read-alerts.outputs.summary }}
         with:
           script: |
             const wpUrl = process.env.WP_URL;
@@ -56,6 +66,14 @@ jobs:
               const body = issue.body || '';
               const whatStuck = body.match(/## What is stuck\n([\s\S]*?)(?=\n## |$)/)?.[1]?.trim() || '';
               const whatToDo = body.match(/## What a human should do\n([\s\S]*?)(?=\n## |$)/)?.[1]?.trim() || '';
+
+              // Check for duplicate alerts from Flight Log
+              const recentAlerts = process.env.FL_ALERTS || '';
+              const isDuplicate = recentAlerts.toLowerCase().includes(issue.title.toLowerCase().substring(0, 30));
+              if (isDuplicate) {
+                core.warning(`Skipping duplicate alert: "${issue.title}" already in recent alerts.`);
+                return;
+              }
 
               const content = [
                 `<p><strong>Human intervention needed.</strong></p>`,
