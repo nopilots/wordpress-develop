@@ -3683,6 +3683,133 @@ class Tests_WP_Customize_Manager extends WP_UnitTestCase {
 			$this->assertSame( $video_url, $sanitized );
 		}
 	}
+
+	/**
+	 * Test that status choices include all valid statuses for users with publish capability.
+	 *
+	 * @covers WP_Customize_Manager::customize_pane_settings
+	 */
+	public function test_status_choices_for_admin_user() {
+		wp_set_current_user( self::$admin_user_id );
+		$this->manager->register_controls();
+		$this->manager->prepare_controls();
+
+		ob_start();
+		$this->manager->customize_pane_settings();
+		$content = ob_get_clean();
+
+		$this->assertNotEmpty( preg_match( '#var _wpCustomizeSettings\s*=\s*({.*?});\s*\n#', $content, $matches ) );
+		$json = $matches[1];
+		$data = json_decode( $json, true );
+
+		$this->assertArrayHasKey( 'changeset', $data );
+		$this->assertArrayHasKey( 'statusChoices', $data['changeset'] );
+		$status_choices = $data['changeset']['statusChoices'];
+
+		// Admin users should have publish, draft, and future - but not pending.
+		$statuses = wp_list_pluck( $status_choices, 'status' );
+		$this->assertContains( 'publish', $statuses );
+		$this->assertContains( 'draft', $statuses );
+		$this->assertContains( 'future', $statuses );
+		$this->assertNotContains( 'pending', $statuses );
+
+		// Verify labels are present.
+		$labels = wp_list_pluck( $status_choices, 'label' );
+		$this->assertContains( 'Publish', $labels );
+		$this->assertContains( 'Save Draft', $labels );
+		$this->assertContains( 'Schedule', $labels );
+	}
+
+	/**
+	 * Test that status choices include pending for users without publish capability.
+	 *
+	 * @covers WP_Customize_Manager::customize_pane_settings
+	 */
+	public function test_status_choices_for_contributor_user() {
+		$contributor_user_id = self::factory()->user->create( array( 'role' => 'contributor' ) );
+		wp_set_current_user( $contributor_user_id );
+
+		// Contributors can edit customize_changeset but not publish.
+		$customize_changeset_type = get_post_type_object( 'customize_changeset' );
+		$contributor                = get_userdata( $contributor_user_id );
+		$contributor->add_cap( $customize_changeset_type->cap->edit_posts );
+
+		$manager = new WP_Customize_Manager();
+		$manager->register_controls();
+		$manager->prepare_controls();
+
+		ob_start();
+		$manager->customize_pane_settings();
+		$content = ob_get_clean();
+
+		$this->assertNotEmpty( preg_match( '#var _wpCustomizeSettings\s*=\s*({.*?});\s*\n#', $content, $matches ) );
+		$json = $matches[1];
+		$data = json_decode( $json, true );
+
+		$this->assertArrayHasKey( 'changeset', $data );
+		$this->assertArrayHasKey( 'statusChoices', $data['changeset'] );
+		$status_choices = $data['changeset']['statusChoices'];
+
+		// Contributors should have draft and pending - but not publish or future.
+		$statuses = wp_list_pluck( $status_choices, 'status' );
+		$this->assertContains( 'draft', $statuses );
+		$this->assertContains( 'pending', $statuses );
+		$this->assertNotContains( 'publish', $statuses );
+		$this->assertNotContains( 'future', $statuses );
+
+		// Verify labels are present.
+		$labels = wp_list_pluck( $status_choices, 'label' );
+		$this->assertContains( 'Save Draft', $labels );
+		$this->assertContains( 'Submit for Review', $labels );
+	}
+
+	/**
+	 * Test that the customize_changeset_status_choices filter works correctly.
+	 *
+	 * @covers WP_Customize_Manager::customize_pane_settings
+	 */
+	public function test_status_choices_filter() {
+		wp_set_current_user( self::$admin_user_id );
+		$this->manager->register_controls();
+		$this->manager->prepare_controls();
+
+		add_filter(
+			'customize_changeset_status_choices',
+			function( $status_choices, $manager ) {
+				$this->assertIsArray( $status_choices );
+				$this->assertInstanceOf( 'WP_Customize_Manager', $manager );
+
+				// Add a custom status choice.
+				$status_choices[] = array(
+					'status' => 'custom',
+					'label'  => 'Custom Status',
+				);
+
+				return $status_choices;
+			},
+			10,
+			2
+		);
+
+		ob_start();
+		$this->manager->customize_pane_settings();
+		$content = ob_get_clean();
+
+		$this->assertNotEmpty( preg_match( '#var _wpCustomizeSettings\s*=\s*({.*?});\s*\n#', $content, $matches ) );
+		$json = $matches[1];
+		$data = json_decode( $json, true );
+
+		$this->assertArrayHasKey( 'changeset', $data );
+		$this->assertArrayHasKey( 'statusChoices', $data['changeset'] );
+		$status_choices = $data['changeset']['statusChoices'];
+
+		// Verify custom status was added by the filter.
+		$statuses = wp_list_pluck( $status_choices, 'status' );
+		$this->assertContains( 'custom', $statuses );
+
+		$labels = wp_list_pluck( $status_choices, 'label' );
+		$this->assertContains( 'Custom Status', $labels );
+	}
 }
 
 require_once ABSPATH . WPINC . '/class-wp-customize-setting.php';

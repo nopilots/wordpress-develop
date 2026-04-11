@@ -4855,7 +4855,7 @@ final class WP_Customize_Manager {
 
 		$current_user_can_publish = current_user_can( get_post_type_object( 'customize_changeset' )->cap->publish_posts );
 
-		// @todo Include all of the status labels here from script-loader.php, and then allow it to be filtered.
+		// Build status choices for all allowed changeset statuses.
 		$status_choices = array();
 		if ( $current_user_can_publish ) {
 			$status_choices[] = array(
@@ -4867,12 +4867,30 @@ final class WP_Customize_Manager {
 			'status' => 'draft',
 			'label'  => __( 'Save Draft' ),
 		);
+		// Pending status is available to users who can edit but not publish.
+		if ( ! $current_user_can_publish ) {
+			$status_choices[] = array(
+				'status' => 'pending',
+				'label'  => _x( 'Submit for Review', 'customizer changeset action/button label' ),
+			);
+		}
 		if ( $current_user_can_publish ) {
 			$status_choices[] = array(
 				'status' => 'future',
 				'label'  => _x( 'Schedule', 'customizer changeset action/button label' ),
 			);
 		}
+
+		/**
+		 * Filters the list of changeset status choices for the Customizer.
+		 *
+		 * @since 6.8.0
+		 *
+		 * @param array                $status_choices Array of changeset status choices.
+		 *                                             Each choice has 'status' and 'label' keys.
+		 * @param WP_Customize_Manager $manager        WP_Customize_Manager instance.
+		 */
+		$status_choices = apply_filters( 'customize_changeset_status_choices', $status_choices, $this );
 
 		// Prepare Customizer settings to pass to JavaScript.
 		$changeset_post = null;
