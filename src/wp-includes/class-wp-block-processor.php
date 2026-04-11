@@ -1008,12 +1008,13 @@ class WP_Block_Processor {
 			/*
 			 * There's JSON, so attempt to find its boundary.
 			 *
-			 * @todo It’s likely faster to scan forward instead of in reverse.
-			 *
 			 * <!-- /wp:core/paragraph {"dropCap":true}⃨ ⃨/-->
 			 */
 			$after_json_whitespace_length = 0;
-			for ( $char_at = $comment_closing_at - $void_flag_length - 1; $char_at > $json_at; $char_at-- ) {
+			$content_end_at               = $comment_closing_at - $void_flag_length;
+			$last_nonspace_at             = null;
+
+			for ( $char_at = $json_at; $char_at < $content_end_at; $char_at++ ) {
 				$char = $text[ $char_at ];
 
 				switch ( $char ) {
@@ -1022,21 +1023,25 @@ class WP_Block_Processor {
 					case "\f":
 					case "\r":
 					case "\n":
-						++$after_json_whitespace_length;
 						continue 2;
 
-					case '}':
-						$json_length = $char_at - $json_at + 1;
-						break 2;
-
 					default:
-						++$at;
-						continue 3;
+						$last_nonspace_at = $char_at;
 				}
 			}
 
+			if ( isset( $last_nonspace_at ) ) {
+				if ( '}' !== $text[ $last_nonspace_at ] ) {
+					++$at;
+					continue;
+				}
+
+				$json_length                  = $last_nonspace_at - $json_at + 1;
+				$after_json_whitespace_length = $content_end_at - $last_nonspace_at - 1;
+			}
+
 			/*
-			 * This covers cases where there is no terminating “}” or where
+			 * This covers cases where there is no terminating "}" or where
 			 * mandatory whitespace is missing.
 			 */
 			if ( 0 === $json_length || 0 === $after_json_whitespace_length ) {

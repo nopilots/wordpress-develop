@@ -472,6 +472,46 @@ class Tests_Blocks_BlockProcessor extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Verifies that a delimiter without whitespace after the JSON attributes
+	 * is treated as a normal HTML comment.
+	 *
+	 * @ticket 61401
+	 */
+	public function test_does_not_match_block_without_whitespace_after_json() {
+		$processor = new WP_Block_Processor( '<!-- wp:block {"tight":true}-->' );
+
+		$this->assertFalse(
+			$processor->next_delimiter(),
+			'Should have ignored a delimiter missing whitespace after the JSON attributes.'
+		);
+	}
+
+	/**
+	 * Verifies that JSON with a curly brace inside a string is matched correctly.
+	 *
+	 * @ticket 61401
+	 */
+	public function test_matches_block_with_curly_brace_inside_json_string() {
+		$processor = new WP_Block_Processor( '<!-- wp:block {"content":"Value with } brace"} -->' );
+
+		$this->assertTrue(
+			$processor->next_delimiter(),
+			'Should have matched the block delimiter even with a brace inside the JSON string.'
+		);
+
+		$this->assertTrue(
+			$processor->opens_block( 'core/block' ),
+			'Should have recognized the core/block block type.'
+		);
+
+		$this->assertSame(
+			array( 'content' => 'Value with } brace' ),
+			$processor->allocate_and_return_parsed_attributes(),
+			'Should have parsed the JSON attributes correctly.'
+		);
+	}
+
+	/**
 	 * Verifies that the appropriate block delimiter type is reported for a matched delimiter.
 	 *
 	 * @ticket 61401
