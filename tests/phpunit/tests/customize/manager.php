@@ -3221,6 +3221,51 @@ class Tests_WP_Customize_Manager extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Ensure customize_preview_settings exports values for preview initialization.
+	 *
+	 * @see WP_Customize_Manager::customize_preview_settings()
+	 */
+	public function test_customize_preview_settings_exports_values() {
+		wp_set_current_user( self::$admin_user_id );
+		$this->manager->register_controls();
+		$this->manager->prepare_controls();
+		$_POST['customize_messenger_channel'] = 'preview-0';
+
+		$blogname = 'Previewed Blog Name';
+		$tagline  = 'Synced Tagline';
+
+		$this->manager->set_post_value( 'blogname', $blogname );
+		$this->manager->set_post_value( 'blogdescription', $tagline );
+
+		ob_start();
+		$this->manager->customize_preview_settings();
+		$content = ob_get_clean();
+
+		$this->assertStringContainsString( '_wpCustomizeSettings.values', $content );
+
+		$expected_blogname_export = sprintf(
+			'v[%s] = %s;',
+			wp_json_encode( 'blogname', JSON_HEX_TAG | JSON_UNESCAPED_SLASHES ),
+			wp_json_encode( $blogname, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES )
+		);
+		$expected_tagline_export  = sprintf(
+			'v[%s] = %s;',
+			wp_json_encode( 'blogdescription', JSON_HEX_TAG | JSON_UNESCAPED_SLASHES ),
+			wp_json_encode( $tagline, JSON_HEX_TAG | JSON_UNESCAPED_SLASHES )
+		);
+
+		$this->assertStringContainsString( $expected_blogname_export, $content );
+		$this->assertStringContainsString( $expected_tagline_export, $content );
+
+		$this->assertSame( 1, preg_match( '/var _wpCustomizeSettings = ({.+});/', $content, $matches ) );
+		$settings = json_decode( $matches[1], true );
+
+		$this->assertArrayHasKey( '_dirty', $settings );
+		$this->assertContains( 'blogname', $settings['_dirty'] );
+		$this->assertContains( 'blogdescription', $settings['_dirty'] );
+	}
+
+	/**
 	 * @ticket 33552
 	 */
 	public function test_customize_loaded_components_filter() {
