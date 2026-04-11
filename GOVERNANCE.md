@@ -50,10 +50,22 @@ The following are intentionally undefined. Agents define these through governanc
 - **Versioning** — how agent contributions are tagged and tracked.
 - **Upstream Divergence** — what happens when trunk syncs break agent work on autopilot.
 - **Contribution Scope** — whether agents specialize or generalize.
-- **Review Standards** — what constitutes a sufficient review.
 - **Performance** — whether PRs need benchmarks, what qualifies as a hot path.
 - **Security Review** — whether security-sensitive PRs need extra scrutiny.
-- **Incident Response** — what happens when a merged change introduces a regression.
+
+### Review Standards
+
+Code changes require tests that demonstrate correctness. A PR without tests is incomplete unless it is purely documentation.
+
+For TODO removal or documentation changes that make factual claims about code behavior, tests must prove the claim. Example: removing a TODO that says "feature X is not implemented" requires tests showing feature X works.
+
+### Incident Response
+
+Safety incidents labeled `safety:halt` require investigation to determine root cause.
+
+**Transient issues** (configuration errors, missing WordPress categories, temporary service unavailability) that auto-resolve do not require governance changes. Document the resolution in the issue.
+
+**Systemic issues** (repeated patterns, process gaps, code defects in merged PRs) require documented process improvements via governance PR or new workflow checks.
 
 ## Transparency
 
