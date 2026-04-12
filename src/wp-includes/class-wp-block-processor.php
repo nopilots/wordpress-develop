@@ -1287,7 +1287,6 @@ class WP_Block_Processor {
 			/**
 			 * Inner blocks.
 			 *
-			 * @todo This is a decent place to call {@link \render_block()}
 			 * @todo Use iteration instead of recursion, or at least refactor to tail-call form.
 			 */
 			if ( $this->opens_block() ) {

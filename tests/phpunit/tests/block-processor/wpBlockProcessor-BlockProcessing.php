@@ -99,6 +99,45 @@ class Tests_Blocks_BlockProcessor_BlockProcessing extends WP_UnitTestCase {
 		);
 	}
 
+	public function test_extract_full_block_does_not_render_blocks() {
+		$render_count = 0;
+		register_block_type(
+			'tests/no-render',
+			array(
+				'render_callback' => static function () use ( &$render_count ) {
+					++$render_count;
+					return '<p>Rendered</p>';
+				},
+			)
+		);
+
+		$block      = null;
+		$processor  = new WP_Block_Processor( '<!-- wp:tests/no-render --><p>Content</p><!-- /wp:tests/no-render -->' );
+
+		try {
+			$this->assertTrue(
+				$processor->next_block( '*' ),
+				'Should have found the registered block.'
+			);
+
+			$block = $processor->extract_full_block_and_advance();
+		} finally {
+			unregister_block_type( 'tests/no-render' );
+		}
+
+		$this->assertSame(
+			0,
+			$render_count,
+			'Block render callback should not run during extraction.'
+		);
+
+		$this->assertSame(
+			parse_blocks( '<!-- wp:tests/no-render --><p>Content</p><!-- /wp:tests/no-render -->' )[0],
+			$block,
+			'Extracted block should match the standard parsed block structure.'
+		);
+	}
+
 	/**
 	 * Data provider.
 	 *
