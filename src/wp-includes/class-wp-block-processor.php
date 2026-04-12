@@ -1267,7 +1267,18 @@ class WP_Block_Processor {
 			);
 		}
 
-		$block = array(
+		/*
+		 * Use an explicit stack to track incomplete blocks instead of recursion.
+		 * This avoids deep call stacks for deeply nested block structures.
+		 *
+		 * Each stack entry is an array with:
+		 * - 'block': the block being built
+		 * - 'depth': the depth at which this block was opened
+		 */
+		$stack = array();
+
+		// Initialize the root block.
+		$root_block = array(
 			'blockName'    => $this->get_block_type(),
 			'attrs'        => $this->allocate_and_return_parsed_attributes() ?? array(),
 			'innerBlocks'  => array(),
@@ -1275,26 +1286,61 @@ class WP_Block_Processor {
 			'innerContent' => array(),
 		);
 
-		$depth = $this->get_depth();
-		while ( $this->next_token() && $this->get_depth() > $depth ) {
-			if ( $this->is_html() ) {
-				$chunk                   = $this->get_html_content();
-				$block['innerHTML']     .= $chunk;
-				$block['innerContent'][] = $chunk;
-				continue;
+		$initial_depth = $this->get_depth();
+
+		// Push the root block onto the stack.
+		$stack[] = array(
+			'block' => $root_block,
+			'depth' => $initial_depth,
+		);
+
+		while ( $this->next_token() && $this->get_depth() > $initial_depth ) {
+			$current_depth = $this->get_depth();
+
+			/*
+			 * Pop completed blocks off the stack when depth decreases.
+			 * A block is complete when we move to a shallower depth.
+			 */
+			while ( count( $stack ) > 1 && $stack[ count( $stack ) - 1 ]['depth'] >= $current_depth ) {
+				$completed = array_pop( $stack );
+				$parent    = &$stack[ count( $stack ) - 1 ]['block'];
+
+				$parent['innerBlocks'][]  = $completed['block'];
+				$parent['innerContent'][] = null;
+
+				unset( $parent );
 			}
 
-			/**
-			 * Inner blocks.
-			 *
-			 * @todo This is a decent place to call {@link \render_block()}
-			 * @todo Use iteration instead of recursion, or at least refactor to tail-call form.
-			 */
-			if ( $this->opens_block() ) {
-				$inner_block             = $this->extract_full_block_and_advance();
-				$block['innerBlocks'][]  = $inner_block;
-				$block['innerContent'][] = null;
+			// Get a reference to the current (top) block on the stack.
+			$current_block = &$stack[ count( $stack ) - 1 ]['block'];
+
+			// Process the current token.
+			if ( $this->is_html() ) {
+				$chunk                      = $this->get_html_content();
+				$current_block['innerHTML']     .= $chunk;
+				$current_block['innerContent'][] = $chunk;
+			} elseif ( $this->opens_block() ) {
+				/**
+				 * Inner blocks.
+				 *
+				 * @todo This is a decent place to call {@link \render_block()}
+				 */
+				// Create a new block and push it onto the stack.
+				$new_block = array(
+					'blockName'    => $this->get_block_type(),
+					'attrs'        => $this->allocate_and_return_parsed_attributes() ?? array(),
+					'innerBlocks'  => array(),
+					'innerHTML'    => '',
+					'innerContent' => array(),
+				);
+
+				$stack[] = array(
+					'block' => $new_block,
+					'depth' => $current_depth,
+				);
 			}
+
+			unset( $current_block );
 
 			/*
 			 * Because the parser has advanced past the closing block token, it
@@ -1302,13 +1348,33 @@ class WP_Block_Processor {
 			 * moving on to the next token at the start of the next loop iteration.
 			 */
 			if ( $this->is_html() ) {
-				$chunk                   = $this->get_html_content();
-				$block['innerHTML']     .= $chunk;
-				$block['innerContent'][] = $chunk;
+				// Ensure we have a block to add content to.
+				if ( count( $stack ) > 0 ) {
+					$current_block = &$stack[ count( $stack ) - 1 ]['block'];
+					$chunk                      = $this->get_html_content();
+					$current_block['innerHTML']     .= $chunk;
+					$current_block['innerContent'][] = $chunk;
+					unset( $current_block );
+				}
 			}
 		}
 
-		return $block;
+		/*
+		 * Pop any remaining blocks off the stack and add them to their parents.
+		 * The last block popped will be the root block.
+		 */
+		while ( count( $stack ) > 1 ) {
+			$completed = array_pop( $stack );
+			$parent    = &$stack[ count( $stack ) - 1 ]['block'];
+
+			$parent['innerBlocks'][]  = $completed['block'];
+			$parent['innerContent'][] = null;
+
+			unset( $parent );
+		}
+
+		// Return the root block.
+		return count( $stack ) > 0 ? $stack[0]['block'] : null;
 	}
 
 	/**
