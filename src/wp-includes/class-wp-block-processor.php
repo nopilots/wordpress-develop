@@ -1084,8 +1084,15 @@ class WP_Block_Processor {
 			$this->next_stack_op = 'pop';
 
 			/*
-			 * @todo Check if the name matches and bail according to the spec parser.
-			 *       The default parser doesn’t examine the names.
+			 * Name matching is intentionally not performed here. According to the spec
+			 * parser (parse_blocks()), closing delimiters do not need to match the block
+			 * type of the most recently opened block. The processor mirrors this behavior
+			 * by popping the stack on any closing delimiter, regardless of the name.
+			 *
+			 * This matches the documented behavior at lines 220-224 which states that
+			 * the stack should "mirror the behavior in parse_blocks()" for cases where
+			 * "a closing block delimiter appears but references a different block type
+			 * than the most-recently opened block does."
 			 */
 		} else {
 			$this->type          = self::OPENER;

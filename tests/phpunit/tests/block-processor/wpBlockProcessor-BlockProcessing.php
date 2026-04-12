@@ -134,4 +134,74 @@ HTML
 			$contents
 		);
 	}
+
+	/**
+	 * Verifies that the processor mirrors parse_blocks() behavior when
+	 * encountering mismatched closing delimiters.
+	 *
+	 * According to the spec parser (parse_blocks()), closing delimiters
+	 * do not need to match the block type of the opener. The processor
+	 * should mirror this behavior by popping the stack on any closer,
+	 * regardless of whether the name matches.
+	 *
+	 * This test documents that name matching is intentionally not performed,
+	 * which is spec-compliant behavior.
+	 *
+	 * @ticket 61401
+	 *
+	 * @dataProvider data_mismatched_closer_content
+	 *
+	 * @param string $html HTML with mismatched closing delimiters.
+	 */
+	public function test_handles_mismatched_closers_like_parse_blocks( $html ) {
+		$processor = new WP_Block_Processor( $html );
+
+		$extracted = array();
+		while ( $processor->next_block( '*' ) ) {
+			$extracted[] = $processor->extract_full_block_and_advance();
+		}
+
+		$this->assertSame(
+			parse_blocks( $html ),
+			$extracted,
+			'Should match parse_blocks() behavior for mismatched closers.'
+		);
+	}
+
+	/**
+	 * Data provider.
+	 *
+	 * @return array[]
+	 */
+	public static function data_mismatched_closer_content() {
+		return array(
+			'Simple mismatch'                  => array(
+				'<!-- wp:paragraph -->content<!-- /wp:group -->',
+			),
+			'Mismatch with namespaces'         => array(
+				'<!-- wp:core/paragraph -->content<!-- /wp:core/group -->',
+			),
+			'Mismatch with different plugins'  => array(
+				'<!-- wp:plugin-a/block -->content<!-- /wp:plugin-b/block -->',
+			),
+			'Nested with outer mismatch'       => array(
+				'<!-- wp:outer --><!-- wp:inner /--><!-- /wp:different -->',
+			),
+			'Multiple nested mismatches'       => array(
+				'<!-- wp:a --><!-- wp:b --><!-- wp:c /--><!-- /wp:x --><!-- /wp:y -->',
+			),
+			'Mismatch in complex structure'    => array(
+				<<<HTML
+<!-- wp:group -->
+<div>
+<!-- wp:paragraph -->
+<p>Text</p>
+<!-- /wp:columns -->
+</div>
+<!-- /wp:section -->
+HTML
+				,
+			),
+		);
+	}
 }
