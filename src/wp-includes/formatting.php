@@ -2435,11 +2435,13 @@ function sanitize_sql_orderby( $orderby ) {
  * @return string The sanitized value.
  */
 function sanitize_html_class( $classname, $fallback = '' ) {
-	// Strip out any percent-encoded characters.
-	$sanitized = preg_replace( '|%[a-fA-F0-9][a-fA-F0-9]|', '', $classname );
+	$sanitized = wp_check_invalid_utf8( $classname );
 
-	// Limit to A-Z, a-z, 0-9, '_', '-'.
-	$sanitized = preg_replace( '/[^A-Za-z0-9_-]/', '', $sanitized );
+	// Strip out any percent-encoded characters.
+	$sanitized = preg_replace( '|%[a-fA-F0-9][a-fA-F0-9]|', '', $sanitized );
+
+	// Limit to letters, numbers, marks, '_', '-'.
+	$sanitized = preg_replace( '/[^\p{L}\p{M}\p{N}_-]/u', '', $sanitized );
 
 	if ( '' === $sanitized && $fallback ) {
 		return sanitize_html_class( $fallback );
