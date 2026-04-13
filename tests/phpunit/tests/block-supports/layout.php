@@ -274,6 +274,35 @@ class Tests_Block_Supports_Layout extends WP_UnitTestCase {
 				),
 				'expected_output' => '<div class="wp-block-group"><div class="wp-block-group__inner-wrapper is-layout-flow wp-block-group-is-layout-flow"></div></div>',
 			),
+			'multiple wrapper block layout with reordered wrapper classes' => array(
+				'args'            => array(
+					'block_content' => '<div class="wp-block-group"><div class="beta custom-wrapper alpha"><p>Content</p></div></div>',
+					'block'         => array(
+						'blockName'    => 'core/group',
+						'attrs'        => array(
+							'layout' => array(
+								'type' => 'default',
+							),
+						),
+						'innerBlocks'  => array(
+							array(
+								'blockName'    => 'core/paragraph',
+								'attrs'        => array(),
+								'innerBlocks'  => array(),
+								'innerHTML'    => '<p>Content</p>',
+								'innerContent' => array( '<p>Content</p>' ),
+							),
+						),
+						'innerHTML'    => '<div class="wp-block-group"><div class="custom-wrapper alpha beta"><p>Content</p></div></div>',
+						'innerContent' => array(
+							'<div class="wp-block-group"><div class="custom-wrapper alpha beta">',
+							null,
+							'</div></div>',
+						),
+					),
+				),
+				'expected_output' => '<div class="wp-block-group"><div class="beta custom-wrapper alpha is-layout-flow wp-block-group-is-layout-flow"><p>Content</p></div></div>',
+			),
 			'block with child layout'                      => array(
 				'args'            => array(
 					'block_content' => '<p>Some text.</p>',

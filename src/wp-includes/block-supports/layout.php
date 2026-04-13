@@ -995,23 +995,22 @@ function wp_render_layout_support_flag( $block_content, $block ) {
 	 * are still present in the wrapper as they are in this example. Frequently, additional classes
 	 * will also be present; rarely should classes be removed.
 	 *
-	 * @todo Find a better way to match the first inner block. If it's possible to identify where the
-	 *       first inner block starts, then it will be possible to find the last tag before it starts
-	 *       and then that tag, if an opening tag, can be solidly identified as a wrapping element.
-	 *       Can some unique value or class or ID be added to the inner blocks when they process
-	 *       so that they can be extracted here safely without guessing? Can the block rendering function
-	 *       return information about where the rendered inner blocks start?
-	 *
-	 * @var string|null
+	 * @var string[]
 	 */
-	$inner_block_wrapper_classes = null;
+	$inner_block_wrapper_classes = array();
 	$first_chunk                 = $block['innerContent'][0] ?? null;
 	if ( is_string( $first_chunk ) && count( $block['innerContent'] ) > 1 ) {
 		$first_chunk_processor = new WP_HTML_Tag_Processor( $first_chunk );
 		while ( $first_chunk_processor->next_tag() ) {
 			$class_attribute = $first_chunk_processor->get_attribute( 'class' );
 			if ( is_string( $class_attribute ) && ! empty( $class_attribute ) ) {
-				$inner_block_wrapper_classes = $class_attribute;
+				$inner_block_wrapper_classes = array_values(
+					array_unique(
+						array_filter(
+							preg_split( '/\s+/', trim( $class_attribute ) )
+						)
+					)
+				);
 			}
 		}
 	}
@@ -1019,8 +1018,9 @@ function wp_render_layout_support_flag( $block_content, $block ) {
 	/*
 	 * If necessary, advance to what is likely to be an inner block wrapper tag.
 	 *
-	 * This advances until it finds the first tag containing the original class
-	 * attribute from above. If none is found it will scan to the end of the block
+	 * This advances until it finds the first tag containing all of the class
+	 * names captured above, regardless of order. If none is found it will scan
+	 * to the end of the block
 	 * and fail to add any class names.
 	 *
 	 * If there is no block wrapper it won't advance at all, in which case the
@@ -1034,8 +1034,18 @@ function wp_render_layout_support_flag( $block_content, $block ) {
 		}
 
 		$class_attribute = $processor->get_attribute( 'class' );
-		if ( is_string( $class_attribute ) && str_contains( $class_attribute, $inner_block_wrapper_classes ) ) {
-			break;
+		if ( is_string( $class_attribute ) && ! empty( $class_attribute ) ) {
+			$classes = array_values(
+				array_unique(
+					array_filter(
+						preg_split( '/\s+/', trim( $class_attribute ) )
+					)
+				)
+			);
+
+			if ( ! array_diff( $inner_block_wrapper_classes, $classes ) ) {
+				break;
+			}
 		}
 	} while ( $processor->next_tag() );
 
