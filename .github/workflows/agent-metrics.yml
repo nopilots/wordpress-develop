@@ -22,7 +22,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Read prior changelog from Flight Log
+      - name: Read last 3 changelog entries from Flight Log
         id: read-changelog
         uses: ./.github/actions/read-from-flight-log
         with:
@@ -111,7 +111,7 @@ jobs:
               `<tr><td>Backlog (triage)</td><td>${triageIssues.length}</td></tr>`,
               `</table>`,
               '',
-              process.env.FL_CHANGELOG ? `<h2>Prior Changelog Context</h2><p>${process.env.FL_CHANGELOG}</p>` : '',
+              process.env.FL_CHANGELOG ? `<h2>Recent Changelog Context</h2><p>${process.env.FL_CHANGELOG}</p>` : '',
             ].filter(Boolean).join('\n');
 
             const excerpt = `${mergedPRs.length} merged. ${approvalRate}% approval. ${recentHalts.length} incidents.`;

@@ -18,7 +18,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Read recent alerts from Flight Log
+      - name: Read last 5 alerts from Flight Log
         id: read-alerts
         uses: ./.github/actions/read-from-flight-log
         with:
@@ -67,9 +67,22 @@ jobs:
               const whatStuck = body.match(/## What is stuck\n([\s\S]*?)(?=\n## |$)/)?.[1]?.trim() || '';
               const whatToDo = body.match(/## What a human should do\n([\s\S]*?)(?=\n## |$)/)?.[1]?.trim() || '';
 
-              // Check for duplicate alerts from Flight Log
-              const recentAlerts = process.env.FL_ALERTS || '';
-              const isDuplicate = recentAlerts.toLowerCase().includes(issue.title.toLowerCase().substring(0, 30));
+              // Prevent repeat sticky alerts — avoid pinging the same humans twice
+              const normalize = (value) => value
+                .toLowerCase()
+                .replace(/^\[[^\]]*]\s*/, '') // drop date prefix like [2026-04-01]
+                .split(':')[0] // only compare the title portion
+                .replace(/[^a-z0-9]+/g, ' ')
+                .trim();
+
+              const recentAlerts = (process.env.FL_ALERTS || '')
+                .split('\n')
+                .map(normalize)
+                .filter(Boolean);
+              const currentTitle = normalize(issue.title || '');
+              const isDuplicate = currentTitle &&
+                recentAlerts.some(alert => alert === currentTitle || alert.includes(currentTitle) || currentTitle.includes(alert));
+
               if (isDuplicate) {
                 core.warning(`Skipping duplicate alert: "${issue.title}" already in recent alerts.`);
                 return;

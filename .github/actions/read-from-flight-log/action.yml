@@ -37,10 +37,30 @@ runs:
         POST_COUNT: ${{ inputs.count }}
       with:
         script: |
+          const sanitizeText = (text, max = 300) => {
+            if (!text) return '';
+            return String(text)
+              .replace(/<[^>]+>/g, ' ')
+              .replace(/\s+/g, ' ')
+              .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '')
+              .replace(/\$\{\{|\}\}/g, '')
+              .trim()
+              .substring(0, max);
+          };
+
+          const parseCount = (raw) => {
+            const parsed = parseInt(raw, 10);
+            if (!Number.isInteger(parsed) || parsed <= 0) return 5;
+            return Math.min(Math.max(parsed, 1), 10);
+          };
+
           const wpUrl = process.env.WP_URL;
           const wpAuth = process.env.WP_AUTH;
           const slug = process.env.CATEGORY_SLUG;
-          const count = parseInt(process.env.POST_COUNT) || 5;
+          const count = parseCount(process.env.POST_COUNT);
+
+          if (wpUrl) core.setSecret(wpUrl);
+          if (wpAuth) core.setSecret(wpAuth);
 
           try {
             const res = await fetch(`${wpUrl}/graphql`, {
@@ -74,18 +94,21 @@ runs:
               return;
             }
 
-            const posts = json.data?.posts?.nodes || [];
+            const posts = (json.data?.posts?.nodes || []).map(post => ({
+              title: sanitizeText(post.title),
+              excerpt: sanitizeText(post.excerpt),
+              content: sanitizeText(post.content),
+              date: post.date,
+            }));
+
             core.setOutput('posts', JSON.stringify(posts));
 
             // Build plain text summary — compact, LLM-friendly
             const summary = posts.map(p => {
               const date = p.date ? p.date.substring(0, 10) : '?';
-              const text = (p.excerpt || p.content || '')
-                .replace(/<[^>]+>/g, '')
-                .replace(/\s+/g, ' ')
-                .trim()
-                .substring(0, 300);
-              return `[${date}] ${p.title}: ${text}`;
+              const text = sanitizeText(p.excerpt || p.content);
+              const title = sanitizeText(p.title || 'Untitled', 120);
+              return `[${date}] ${title}: ${text}`;
             }).join('\n').substring(0, 2000);
 
             core.setOutput('summary', summary);

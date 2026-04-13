@@ -18,7 +18,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Read prior corrections from Flight Log
+      - name: Read last 5 corrections from Flight Log (lessons learned)
         id: read-corrections
         uses: ./.github/actions/read-from-flight-log
         with:

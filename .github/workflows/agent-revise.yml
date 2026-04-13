@@ -24,7 +24,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Read prior corrections from Flight Log
+      - name: Read last 5 corrections from Flight Log (lessons learned)
         id: read-corrections
         uses: ./.github/actions/read-from-flight-log
         with:
@@ -126,6 +126,7 @@ jobs:
                 review.body || '_No detailed feedback provided._',
                 '',
                 `## Prior course corrections context`,
+                `Recent lessons captured in the Flight Log — avoid repeating the same mistakes while revising.`,
                 '',
                 process.env.FL_CORRECTIONS || '_None in Flight Log._',
                 '',
