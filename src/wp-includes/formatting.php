@@ -2422,10 +2422,8 @@ function sanitize_sql_orderby( $orderby ) {
 /**
  * Sanitizes an HTML classname to ensure it only contains valid characters.
  *
- * Strips the string down to A-Z,a-z,0-9,_,-. If this results in an empty
- * string then it will return the alternative value supplied.
- *
- * @todo Expand to support the full range of CDATA that a class attribute can contain.
+ * Strips the string down to Unicode letters, numbers, marks, underscores and hyphens.
+ * If this results in an empty string then it will return the alternative value supplied.
  *
  * @since 2.8.0
  *
