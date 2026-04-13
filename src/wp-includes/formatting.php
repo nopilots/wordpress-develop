@@ -2639,19 +2639,31 @@ function force_balance_tags( $text ) {
 		'>#' // End with a closing bracket.
 	);
 
-	while ( preg_match( $tag_pattern, $text, $regex ) ) {
-		$full_match        = $regex[0];
-		$has_leading_slash = ! empty( $regex[1] );
-		$tag_name          = $regex[2];
+	while ( '' !== $text ) {
+		$matched = preg_match(
+			$tag_pattern,
+			$text,
+			$regex,
+			PREG_OFFSET_CAPTURE | PREG_UNMATCHED_AS_NULL
+		);
+
+		if ( 1 !== $matched ) {
+			break;
+		}
+
+		$full_match        = $regex[0][0];
+		$full_match_offset = $regex[0][1];
+		$has_leading_slash = ! empty( $regex[1][0] );
+		$tag_name          = $regex[2][0];
 		$tag               = strtolower( $tag_name );
 		$is_single_tag     = in_array( $tag, $single_tags, true );
-		$pre_attribute_ws  = $regex[4] ?? '';
-		$attributes        = trim( $regex[5] ?? $regex[3] );
+		$pre_attribute_ws  = $regex[4][0] ?? '';
+		$attributes        = trim( $regex[5][0] ?? $regex[3][0] ?? '' );
 		$has_self_closer   = str_ends_with( $attributes, '/' );
 
 		$newtext .= $tagqueue;
 
-		$i = strpos( $text, $full_match );
+		$i = $full_match_offset;
 		$l = strlen( $full_match );
 
 		// Clear the shifter.

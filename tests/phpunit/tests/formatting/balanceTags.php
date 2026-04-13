@@ -385,6 +385,13 @@ class Tests_Formatting_BalanceTags extends WP_UnitTestCase {
 		}
 	}
 
+	public function test_preserves_incomplete_tag_text_and_closes_open_stack() {
+		$input    = '<div><span';
+		$expected = '<div><span</div>';
+
+		$this->assertSame( $expected, balanceTags( $input, true ) );
+	}
+
 	/**
 	 * Get custom element data.
 	 *
