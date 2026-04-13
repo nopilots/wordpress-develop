@@ -184,7 +184,7 @@ jobs:
             if (patOwner) core.info(`Will remove PAT owner (${patOwner}) from assignees after each assignment`);
 
             // Pace assignments based on system health from Flight Log
-            let assignLimit = 6;
+            let assignLimit = 3;
             const sitrepContext = process.env.SITREP_CONTEXT || '';
             // If sitrep mentions low approval rate or zero merges, throttle to 1
             if (sitrepContext.match(/approval.*?[0-4]\d%/i) || sitrepContext.match(/merged.*?:?\s*0\b/i)) {
