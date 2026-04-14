@@ -63,13 +63,14 @@ function get_active_blog_for_user( $user_id ) {
 			$primary = get_site( $primary_blog );
 		}
 	} else {
-		// TODO: Review this call to add_user_to_blog too - to get here the user must have a role on this blog?
-		$result = add_user_to_blog( $first_blog->userblog_id, $user_id, 'subscriber' );
-
-		if ( ! is_wp_error( $result ) ) {
-			update_user_meta( $user_id, 'primary_blog', $first_blog->userblog_id );
-			$primary = $first_blog;
-		}
+		/*
+		 * User has blogs but no primary_blog set. Since get_blogs_of_user() returned
+		 * results, the user already has a role on these blogs. Set the first blog as
+		 * primary without calling add_user_to_blog() to avoid overwriting their
+		 * existing role.
+		 */
+		update_user_meta( $user_id, 'primary_blog', $first_blog->userblog_id );
+		$primary = get_site( $first_blog->userblog_id );
 	}
 
 	if ( ( ! is_object( $primary ) )

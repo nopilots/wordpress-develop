@@ -96,4 +96,66 @@ class Tests_User_GetActiveBlogForUser extends WP_UnitTestCase {
 
 		$this->assertSame( $current_site_id, $result->id );
 	}
+
+	/**
+	 * Test that get_active_blog_for_user() preserves existing role when setting primary_blog.
+	 *
+	 * When a user has blogs but no primary_blog is set, the function should set the
+	 * first blog as primary WITHOUT overwriting the user's existing role on that blog.
+	 * This test creates a user with the 'editor' role and verifies the role is preserved
+	 * when primary_blog is automatically set.
+	 */
+	public function test_get_active_blog_for_user_preserves_existing_role() {
+		$site_id = self::factory()->blog->create( array( 'user_id' => self::$user_id ) );
+
+		// Give the user an elevated role on the blog.
+		add_user_to_blog( $site_id, self::$user_id, 'editor' );
+
+		// Remove primary_blog meta to trigger the code path we're testing.
+		delete_user_meta( self::$user_id, 'primary_blog' );
+
+		// Call get_active_blog_for_user() which should set primary_blog.
+		$result = get_active_blog_for_user( self::$user_id );
+
+		// Verify the blog was returned.
+		$this->assertSame( $site_id, $result->id );
+
+		// Verify primary_blog was set.
+		$this->assertSame( $site_id, (int) get_user_meta( self::$user_id, 'primary_blog', true ) );
+
+		// Verify the user's role was NOT changed from editor to subscriber.
+		$user = new WP_User( self::$user_id, '', $site_id );
+		$this->assertContains( 'editor', $user->roles, 'User role should remain editor, not be downgraded to subscriber' );
+		$this->assertNotContains( 'subscriber', $user->roles, 'User should not have subscriber role' );
+
+		wp_delete_site( $site_id );
+	}
+
+	/**
+	 * Test that get_active_blog_for_user() preserves administrator role.
+	 *
+	 * Similar to the editor test, but verifies administrator role is also preserved.
+	 */
+	public function test_get_active_blog_for_user_preserves_administrator_role() {
+		$site_id = self::factory()->blog->create( array( 'user_id' => self::$user_id ) );
+
+		// Give the user admin role on the blog.
+		add_user_to_blog( $site_id, self::$user_id, 'administrator' );
+
+		// Remove primary_blog meta.
+		delete_user_meta( self::$user_id, 'primary_blog' );
+
+		// Call get_active_blog_for_user().
+		$result = get_active_blog_for_user( self::$user_id );
+
+		// Verify the blog was returned.
+		$this->assertSame( $site_id, $result->id );
+
+		// Verify the user's role was NOT changed from administrator to subscriber.
+		$user = new WP_User( self::$user_id, '', $site_id );
+		$this->assertContains( 'administrator', $user->roles, 'User role should remain administrator' );
+		$this->assertNotContains( 'subscriber', $user->roles, 'User should not have subscriber role' );
+
+		wp_delete_site( $site_id );
+	}
 }
