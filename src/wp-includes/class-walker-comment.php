@@ -33,12 +33,24 @@ class Walker_Comment extends Walker {
 	 * @var string[]
 	 *
 	 * @see Walker::$db_fields
-	 * @todo Decouple this
 	 */
 	public $db_fields = array(
 		'parent' => 'comment_parent',
 		'id'     => 'comment_ID',
 	);
+
+	/**
+	 * Constructor.
+	 *
+	 * @since 6.8.0
+	 *
+	 * @param array|false $fields Optional. Database fields to use. Default false.
+	 */
+	public function __construct( $fields = false ) {
+		if ( $fields ) {
+			$this->db_fields = $fields;
+		}
+	}
 
 	/**
 	 * Starts the list before the elements are added.

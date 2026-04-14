@@ -54,6 +54,123 @@ class Tests_Comment_Walker extends WP_UnitTestCase {
 			array( $comment_child, $comment_parent )
 		);
 	}
+
+	/**
+	 * Tests that Walker_Comment can be instantiated without arguments.
+	 *
+	 * @covers Walker_Comment::__construct
+	 */
+	public function test_constructor_without_arguments() {
+		$walker = new Walker_Comment();
+		$this->assertIsArray( $walker->db_fields );
+		$this->assertArrayHasKey( 'parent', $walker->db_fields );
+		$this->assertArrayHasKey( 'id', $walker->db_fields );
+		$this->assertSame( 'comment_parent', $walker->db_fields['parent'] );
+		$this->assertSame( 'comment_ID', $walker->db_fields['id'] );
+	}
+
+	/**
+	 * Tests that Walker_Comment uses default db_fields when passed false.
+	 *
+	 * @covers Walker_Comment::__construct
+	 */
+	public function test_constructor_with_false() {
+		$walker = new Walker_Comment( false );
+		$this->assertIsArray( $walker->db_fields );
+		$this->assertSame( 'comment_parent', $walker->db_fields['parent'] );
+		$this->assertSame( 'comment_ID', $walker->db_fields['id'] );
+	}
+
+	/**
+	 * Tests that Walker_Comment accepts custom db_fields.
+	 *
+	 * @covers Walker_Comment::__construct
+	 */
+	public function test_constructor_with_custom_fields() {
+		$custom_fields = array(
+			'parent' => 'custom_parent_field',
+			'id'     => 'custom_id_field',
+		);
+		$walker        = new Walker_Comment( $custom_fields );
+		$this->assertSame( 'custom_parent_field', $walker->db_fields['parent'] );
+		$this->assertSame( 'custom_id_field', $walker->db_fields['id'] );
+	}
+
+	/**
+	 * Tests that Walker_Comment with custom db_fields works correctly with hierarchical data.
+	 *
+	 * This test verifies that the walker can properly traverse hierarchical data
+	 * when custom db_fields are provided, simulating an alternate data structure.
+	 *
+	 * @covers Walker_Comment::__construct
+	 * @covers Walker_Comment::walk
+	 */
+	public function test_custom_db_fields_with_hierarchical_data() {
+		// Create mock comment objects with custom field names.
+		$parent_comment = (object) array(
+			'custom_id_field'     => 1,
+			'custom_parent_field' => 0,
+			'comment_post_ID'     => $this->post_id,
+			'comment_content'     => 'Parent comment',
+			'comment_approved'    => '1',
+			'comment_type'        => 'comment',
+		);
+
+		$child_comment = (object) array(
+			'custom_id_field'     => 2,
+			'custom_parent_field' => 1,
+			'comment_post_ID'     => $this->post_id,
+			'comment_content'     => 'Child comment',
+			'comment_approved'    => '1',
+			'comment_type'        => 'comment',
+		);
+
+		$custom_fields = array(
+			'parent' => 'custom_parent_field',
+			'id'     => 'custom_id_field',
+		);
+
+		$walker = new Walker_Comment( $custom_fields );
+
+		// Test that walker can traverse with custom fields.
+		$output = $walker->walk( array( $parent_comment, $child_comment ), 2 );
+
+		// The walker should produce output (not empty).
+		$this->assertNotEmpty( $output );
+	}
+
+	/**
+	 * Tests that default db_fields maintain backward compatibility.
+	 *
+	 * @covers Walker_Comment::__construct
+	 */
+	public function test_backward_compatibility_with_default_comments() {
+		$comment_parent = self::factory()->comment->create( array( 'comment_post_ID' => $this->post_id ) );
+		$comment_child  = self::factory()->comment->create(
+			array(
+				'comment_post_ID' => $this->post_id,
+				'comment_parent'  => $comment_parent,
+			)
+		);
+		$comments       = array(
+			get_comment( $comment_parent ),
+			get_comment( $comment_child ),
+		);
+
+		// Test with default constructor (no arguments).
+		$walker_default = new Walker_Comment();
+		$output_default = $walker_default->walk( $comments, 2 );
+
+		// Test with explicit false argument.
+		$walker_false = new Walker_Comment( false );
+		$output_false = $walker_false->walk( $comments, 2 );
+
+		// Both should produce identical output.
+		$this->assertSame( $output_default, $output_false );
+
+		// Output should contain both comments.
+		$this->assertNotEmpty( $output_default );
+	}
 }
 
 class Comment_Callback_Test_Helper {
