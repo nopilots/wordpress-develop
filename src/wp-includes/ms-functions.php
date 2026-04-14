@@ -738,7 +738,10 @@ function wpmu_validate_blog_signup( $blogname, $blog_title, $user = '' ) {
 
 	/*
 	 * Has someone already signed up for this domain?
-	 * TODO: Check email too?
+	 *
+	 * Note: Email is intentionally not checked here, as email validation occurs
+	 * separately in wpmu_validate_user_signup(). The same email can legitimately
+	 * create multiple blogs in a multisite network.
 	 */
 	$signup = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $wpdb->signups WHERE domain = %s AND path = %s", $mydomain, $path ) );
 	if ( $signup instanceof stdClass ) {

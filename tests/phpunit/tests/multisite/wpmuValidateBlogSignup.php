@@ -158,4 +158,140 @@ class Tests_Multisite_wpmuValidateBlogSignup extends WP_UnitTestCase {
 
 		$this->assertContains( 'invalid_nonce', $valid['errors']->get_error_codes() );
 	}
+
+	/**
+	 * Tests that a pending blog signup in the signups table blocks a new signup for the same domain/path.
+	 */
+	public function test_pending_blog_signup_blocks_duplicate_domain_path() {
+		global $wpdb;
+
+		$network = get_network();
+
+		// Set up domain and path based on subdomain vs subdirectory install.
+		if ( is_subdomain_install() ) {
+			$domain = 'pendingblog.' . preg_replace( '|^www\.|', '', $network->domain );
+			$path   = $network->path;
+		} else {
+			$domain = $network->domain;
+			$path   = $network->path . 'pendingblog/';
+		}
+
+		// Insert a pending signup for this domain/path.
+		$wpdb->insert(
+			$wpdb->signups,
+			array(
+				'domain'         => $domain,
+				'path'           => $path,
+				'title'          => 'Pending Blog',
+				'user_login'     => 'testuser1',
+				'user_email'     => 'testuser1@example.com',
+				'registered'     => current_time( 'mysql', true ),
+				'activation_key' => 'test_activation_key_1',
+				'meta'           => '',
+			)
+		);
+
+		// Try to validate a signup for the same domain/path.
+		$result = wpmu_validate_blog_signup( 'pendingblog', 'New Blog Title', get_userdata( self::$super_admin_id ) );
+
+		// Should have an error because the domain/path is reserved.
+		$this->assertContains( 'blogname', $result['errors']->get_error_codes(), 'Should block duplicate domain/path signup.' );
+
+		// Clean up.
+		$wpdb->delete( $wpdb->signups, array( 'domain' => $domain, 'path' => $path ) );
+	}
+
+	/**
+	 * Tests that same email can create multiple blog signups (email is not checked in blog validation).
+	 *
+	 * This test validates that the TODO removal was correct: email should NOT be checked in
+	 * wpmu_validate_blog_signup() because the same email can legitimately create multiple blogs.
+	 */
+	public function test_same_email_can_signup_multiple_blogs() {
+		global $wpdb;
+
+		$network    = get_network();
+		$user_email = 'multisite@example.com';
+
+		// Set up first blog domain/path.
+		if ( is_subdomain_install() ) {
+			$domain1 = 'firstblog.' . preg_replace( '|^www\.|', '', $network->domain );
+			$path1   = $network->path;
+		} else {
+			$domain1 = $network->domain;
+			$path1   = $network->path . 'firstblog/';
+		}
+
+		// Insert a pending signup for the first blog with this email.
+		$wpdb->insert(
+			$wpdb->signups,
+			array(
+				'domain'         => $domain1,
+				'path'           => $path1,
+				'title'          => 'First Blog',
+				'user_login'     => 'testuser2',
+				'user_email'     => $user_email,
+				'registered'     => current_time( 'mysql', true ),
+				'activation_key' => 'test_activation_key_2',
+				'meta'           => '',
+			)
+		);
+
+		// Now try to validate a signup for a DIFFERENT blog with the SAME email.
+		$result = wpmu_validate_blog_signup( 'secondblog', 'Second Blog Title', get_userdata( self::$super_admin_id ) );
+
+		// Should NOT have an error - the same email can create multiple blogs.
+		$this->assertEmpty( $result['errors']->get_error_codes(), 'Same email should be allowed for different blog signups.' );
+
+		// Clean up.
+		$wpdb->delete( $wpdb->signups, array( 'domain' => $domain1, 'path' => $path1 ) );
+	}
+
+	/**
+	 * Tests that old pending signups (>2 days) are automatically cleaned up.
+	 */
+	public function test_old_pending_signup_is_cleaned_up() {
+		global $wpdb;
+
+		$network = get_network();
+
+		// Set up domain and path.
+		if ( is_subdomain_install() ) {
+			$domain = 'oldblog.' . preg_replace( '|^www\.|', '', $network->domain );
+			$path   = $network->path;
+		} else {
+			$domain = $network->domain;
+			$path   = $network->path . 'oldblog/';
+		}
+
+		// Insert a pending signup registered 3 days ago.
+		$old_date = gmdate( 'Y-m-d H:i:s', time() - ( 3 * DAY_IN_SECONDS ) );
+		$wpdb->insert(
+			$wpdb->signups,
+			array(
+				'domain'         => $domain,
+				'path'           => $path,
+				'title'          => 'Old Blog',
+				'user_login'     => 'testuser3',
+				'user_email'     => 'testuser3@example.com',
+				'registered'     => $old_date,
+				'activation_key' => 'test_activation_key_3',
+				'meta'           => '',
+			)
+		);
+
+		// Verify the signup exists.
+		$signup_before = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $wpdb->signups WHERE domain = %s AND path = %s", $domain, $path ) );
+		$this->assertInstanceOf( 'stdClass', $signup_before, 'Old signup should exist before validation.' );
+
+		// Try to validate a signup for the same domain/path.
+		$result = wpmu_validate_blog_signup( 'oldblog', 'New Blog Title', get_userdata( self::$super_admin_id ) );
+
+		// Should NOT have an error - old signup should be cleaned up.
+		$this->assertEmpty( $result['errors']->get_error_codes(), 'Old pending signup should be cleaned up automatically.' );
+
+		// Verify the old signup was deleted.
+		$signup_after = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $wpdb->signups WHERE domain = %s AND path = %s", $domain, $path ) );
+		$this->assertNull( $signup_after, 'Old signup should be deleted after validation.' );
+	}
 }
