@@ -37,21 +37,66 @@ runs:
         POST_COUNT: ${{ inputs.count }}
       with:
         script: |
+          /**
+           * Sanitizes text from WordPress content for safe use in LLM prompts and GitHub Actions logs.
+           *
+           * This function defends against:
+           * - HTML/XML tag injection via stripping all tags
+           * - GitHub Actions variable injection via removing ${{}} syntax
+           * - Control characters and non-ASCII that could break parsing
+           * - Excessive length that could overflow prompts
+           *
+           * NOTE: This sanitizes for LLM prompt injection, NOT for rendering in HTML contexts.
+           * If you render this output in HTML, you MUST HTML-escape it first using escapeHtml().
+           *
+           * @param {string} text - Raw text from WordPress (may contain HTML, entities, etc.)
+           * @param {number} max - Maximum length in characters (default 300)
+           * @returns {string} Plain ASCII text, stripped and truncated
+           */
           const sanitizeText = (text, max = 300) => {
             if (!text) return '';
             return String(text)
-              .replace(/<[^>]+>/g, ' ')
-              .replace(/\s+/g, ' ')
-              .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '')
-              .replace(/\$\{\{|\}\}/g, '')
+              .replace(/<[^>]+>/g, ' ')               // Strip all HTML tags
+              .replace(/&[a-z]+;/gi, ' ')             // Strip HTML entities like &amp; &lt; etc
+              .replace(/&#?\w+;/g, ' ')               // Strip numeric entities like &#39; &#x27;
+              .replace(/\s+/g, ' ')                   // Collapse whitespace
+              .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '') // Remove non-printable and non-ASCII
+              .replace(/\$\{\{|\}\}/g, '')            // Remove GitHub Actions variable syntax
+              .replace(/[<>"'`]/g, '')                // Remove XSS-prone characters
               .trim()
               .substring(0, max);
           };
 
+          /**
+           * Parses and validates the post count input.
+           *
+           * Defaults to 5 posts if invalid input - balances context size vs recency.
+           * Caps at 10 to prevent excessive API load and prompt bloat.
+           *
+           * @param {string} raw - Raw string input from workflow
+           * @returns {number} Validated count between 1-10 (defaults to 5 if invalid)
+           */
           const parseCount = (raw) => {
             const parsed = parseInt(raw, 10);
             if (!Number.isInteger(parsed) || parsed <= 0) return 5;
             return Math.min(Math.max(parsed, 1), 10);
+          };
+
+          /**
+           * HTML-escapes text for safe rendering in HTML contexts.
+           * Use this when embedding sanitized text in HTML output like Flight Log posts.
+           *
+           * @param {string} text - Text to escape
+           * @returns {string} HTML-safe text
+           */
+          const escapeHtml = (text) => {
+            if (!text) return '';
+            return String(text)
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&#39;');
           };
 
           const wpUrl = process.env.WP_URL;
@@ -94,6 +139,12 @@ runs:
               return;
             }
 
+            // Transform WordPress posts from GraphQL response into sanitized objects
+            // Post object structure from WPGraphQL:
+            //   - title: string (post title, may contain HTML)
+            //   - excerpt: string (post excerpt, may contain HTML)
+            //   - content: string (full post content, may contain HTML)
+            //   - date: string (ISO 8601 timestamp like "2026-04-13T22:10:39")
             const posts = (json.data?.posts?.nodes || []).map(post => ({
               title: sanitizeText(post.title),
               excerpt: sanitizeText(post.excerpt),
@@ -104,6 +155,8 @@ runs:
             core.setOutput('posts', JSON.stringify(posts));
 
             // Build plain text summary — compact, LLM-friendly
+            // Format: [YYYY-MM-DD] Title (120 chars max): Text snippet (300 chars max)
+            // Truncated to 2000 chars total to fit in GitHub Actions environment variables
             const summary = posts.map(p => {
               const date = p.date ? p.date.substring(0, 10) : '?';
               const text = sanitizeText(p.excerpt || p.content);

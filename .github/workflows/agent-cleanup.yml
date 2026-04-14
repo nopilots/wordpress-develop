@@ -31,6 +31,9 @@ jobs:
         uses: actions/github-script@v7
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # FL_CORRECTIONS contains recent "lessons learned" from the Flight Log corrections category.
+          # Format: [YYYY-MM-DD] Post title: Text snippet (one per line, already sanitized)
+          # Used to avoid repeating past mistakes when generating changelog content.
           FL_CORRECTIONS: ${{ steps.read-corrections.outputs.summary }}
         with:
           script: |

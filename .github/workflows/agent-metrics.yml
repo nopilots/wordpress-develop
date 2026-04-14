@@ -37,6 +37,9 @@ jobs:
           WP_URL: ${{ secrets.WP_URL }}
           WP_AUTH: ${{ secrets.WP_AUTH }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # FL_CHANGELOG contains recent changelog posts from Flight Log
+          # Format: [YYYY-MM-DD] Post title: Text snippet (one per line, already sanitized)
+          # Provides context about recent changes for the metrics report
           FL_CHANGELOG: ${{ steps.read-changelog.outputs.summary }}
         with:
           script: |

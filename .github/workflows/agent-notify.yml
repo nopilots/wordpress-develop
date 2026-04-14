@@ -32,6 +32,9 @@ jobs:
         env:
           WP_URL: ${{ secrets.WP_URL }}
           WP_AUTH: ${{ secrets.WP_AUTH }}
+          # FL_ALERTS contains recent alert posts from Flight Log
+          # Format: [YYYY-MM-DD] Post title: Text snippet (one per line, already sanitized)
+          # Used to prevent duplicate sticky alerts - avoids pinging humans twice for same issue
           FL_ALERTS: ${{ steps.read-alerts.outputs.summary }}
         with:
           script: |
