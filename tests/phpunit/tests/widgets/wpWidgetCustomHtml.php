@@ -326,4 +326,54 @@ class Tests_Widgets_wpWidgetCustomHtml extends WP_UnitTestCase {
 		$output = get_echo( array( $widget, 'widget' ), array( $args, $instance ) );
 		$this->assertStringNotContainsString( 'rel="noopener"', $output );
 	}
+
+	/**
+	 * Test that proper plural form strings are passed to JavaScript for i18n.
+	 *
+	 * This test verifies that the TODO fix has been implemented: the widget now
+	 * uses _n_noop() to pass proper plural forms to JavaScript, which can then
+	 * use wp.i18n._n() for proper pluralization including dual forms.
+	 *
+	 * @covers WP_Widget_Custom_HTML::enqueue_admin_scripts
+	 */
+	public function test_enqueue_admin_scripts_plural_forms() {
+		global $wp_scripts;
+
+		$user = self::factory()->user->create();
+		wp_set_current_user( $user );
+		wp_get_current_user()->syntax_highlighting = 'true';
+		set_current_screen( 'widgets.php' );
+
+		$widget = new WP_Widget_Custom_HTML();
+		$widget->enqueue_admin_scripts();
+
+		// Get the inline script data.
+		$inline_scripts = $wp_scripts->get_data( 'custom-html-widgets', 'after' );
+
+		// Find the script that contains the l10n data.
+		$l10n_script = '';
+		if ( is_array( $inline_scripts ) ) {
+			foreach ( $inline_scripts as $script ) {
+				if ( strpos( $script, 'wp.customHtmlWidgets.l10n' ) !== false ) {
+					$l10n_script = $script;
+					break;
+				}
+			}
+		}
+
+		$this->assertNotEmpty( $l10n_script, 'l10n script should be enqueued' );
+
+		// Verify the structure uses _n_noop format with singular and plural keys.
+		$this->assertStringContainsString( '"errorNotice"', $l10n_script );
+		$this->assertStringContainsString( '"msg"', $l10n_script );
+		$this->assertStringContainsString( '"singular"', $l10n_script );
+		$this->assertStringContainsString( '"plural"', $l10n_script );
+
+		// Verify the strings are present (checking for %s placeholder, not %d).
+		$this->assertStringContainsString( 'There is %s error which must be fixed before you can save.', $l10n_script );
+		$this->assertStringContainsString( 'There are %s errors which must be fixed before you can save.', $l10n_script );
+
+		// Verify the old singular/plural workaround is NOT present at the top level.
+		$this->assertStringNotContainsString( '"singular":"There is', $l10n_script );
+	}
 }

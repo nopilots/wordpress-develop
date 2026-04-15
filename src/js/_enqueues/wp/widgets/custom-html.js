@@ -18,8 +18,10 @@ wp.customHtmlWidgets = ( function( $ ) {
 		codeEditorSettings: {},
 		l10n: {
 			errorNotice: {
-				singular: '',
-				plural: ''
+				msg: {
+					singular: '',
+					plural: ''
+				}
 			}
 		}
 	};
@@ -128,10 +130,15 @@ wp.customHtmlWidgets = ( function( $ ) {
 		updateErrorNotice: function( errorAnnotations ) {
 			var control = this, errorNotice, message = '', customizeSetting;
 
-			if ( 1 === errorAnnotations.length ) {
-				message = component.l10n.errorNotice.singular.replace( '%d', '1' );
-			} else if ( errorAnnotations.length > 1 ) {
-				message = component.l10n.errorNotice.plural.replace( '%d', String( errorAnnotations.length ) );
+			if ( errorAnnotations.length > 0 ) {
+				message = wp.i18n.sprintf(
+					wp.i18n._n(
+						component.l10n.errorNotice.msg.singular,
+						component.l10n.errorNotice.msg.plural,
+						errorAnnotations.length
+					),
+					errorAnnotations.length
+				);
 			}
 
 			if ( control.fields.content[0].setCustomValidity ) {
