@@ -970,7 +970,7 @@ function wpmu_signup_blog_notification(
 	if ( ! is_subdomain_install() || get_current_network_id() !== 1 ) {
 		$activate_url = network_site_url( "wp-activate.php?key=$key" );
 	} else {
-		$activate_url = "http://{$domain}{$path}wp-activate.php?key=$key"; // @todo Use *_url() API.
+		$activate_url = set_url_scheme( "http://{$domain}{$path}wp-activate.php?key=$key" );
 	}
 
 	$activate_url = esc_url( $activate_url );
