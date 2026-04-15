@@ -1262,7 +1262,6 @@ function wpmu_activate_signup(
 
 	$blog_id = wpmu_create_blog( $signup->domain, $signup->path, $signup->title, $user_id, $meta, get_current_network_id() );
 
-	// TODO: What to do if we create a user but cannot create a blog?
 	if ( is_wp_error( $blog_id ) ) {
 		/*
 		 * If blog is taken, that means a previous attempt to activate this blog
@@ -1279,6 +1278,16 @@ function wpmu_activate_signup(
 				),
 				array( 'activation_key' => $key )
 			);
+		} else {
+			/*
+			 * Blog creation failed. If we created a new user in this request,
+			 * remove it to prevent orphaned user accounts.
+			 */
+			if ( ! isset( $user_already_exists ) ) {
+				$wpdb->delete( $wpdb->users, array( 'ID' => $user_id ) );
+				$wpdb->delete( $wpdb->usermeta, array( 'user_id' => $user_id ) );
+				clean_user_cache( $user_id );
+			}
 		}
 		return $blog_id;
 	}
