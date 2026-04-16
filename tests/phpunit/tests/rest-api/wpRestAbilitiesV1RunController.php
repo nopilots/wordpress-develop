@@ -1238,4 +1238,83 @@ class Tests_REST_API_WpRestAbilitiesV1RunController extends WP_UnitTestCase {
 		// OPTIONS requests return 200 with allowed methods
 		$this->assertEquals( 200, $response->get_status() );
 	}
+
+	/**
+	 * Test that ALLMETHODS registration allows all HTTP methods to be dispatched,
+	 * with method validation occurring during permission checks.
+	 *
+	 * This test verifies the design pattern documented in the register_routes() method:
+	 * - Routes are registered with ALLMETHODS because ability annotations aren't known at registration time
+	 * - Method validation happens in check_ability_permissions() via validate_request_method()
+	 * - Invalid methods return 405 with appropriate error messages
+	 * - Valid methods for each ability type work correctly
+	 *
+	 * @ticket 64098
+	 */
+	public function test_allmethods_registration_with_runtime_validation(): void {
+		// Test 1: Regular ability (no annotations) - should accept POST only
+		$post_request = new WP_REST_Request( 'POST', '/wp-abilities/v1/abilities/test/calculator/run' );
+		$post_request->set_header( 'Content-Type', 'application/json' );
+		$post_request->set_body(
+			wp_json_encode(
+				array(
+					'input' => array(
+						'a' => 5,
+						'b' => 3,
+					),
+				)
+			)
+		);
+		$post_response = $this->server->dispatch( $post_request );
+		$this->assertEquals( 200, $post_response->get_status(), 'Regular ability should accept POST' );
+
+		$get_request  = new WP_REST_Request( 'GET', '/wp-abilities/v1/abilities/test/calculator/run' );
+		$get_response = $this->server->dispatch( $get_request );
+		$this->assertEquals( 405, $get_response->get_status(), 'Regular ability should reject GET with 405' );
+		$this->assertEquals( 'rest_ability_invalid_method', $get_response->get_data()['code'] );
+
+		// Test 2: Read-only ability - should accept GET only
+		$get_request = new WP_REST_Request( 'GET', '/wp-abilities/v1/abilities/test/user-info/run' );
+		$get_request->set_query_params(
+			array(
+				'input' => array(
+					'user_id' => self::$user_id,
+				),
+			)
+		);
+		$get_response = $this->server->dispatch( $get_request );
+		$this->assertEquals( 200, $get_response->get_status(), 'Read-only ability should accept GET' );
+
+		$post_request = new WP_REST_Request( 'POST', '/wp-abilities/v1/abilities/test/user-info/run' );
+		$post_request->set_header( 'Content-Type', 'application/json' );
+		$post_request->set_body( wp_json_encode( array( 'input' => array( 'user_id' => self::$user_id ) ) ) );
+		$post_response = $this->server->dispatch( $post_request );
+		$this->assertEquals( 405, $post_response->get_status(), 'Read-only ability should reject POST with 405' );
+		$this->assertEquals( 'rest_ability_invalid_method', $post_response->get_data()['code'] );
+
+		// Test 3: Destructive ability - should accept DELETE only
+		$delete_request = new WP_REST_Request( 'DELETE', '/wp-abilities/v1/abilities/test/delete-user/run' );
+		$delete_request->set_query_params(
+			array(
+				'input' => array(
+					'user_id' => self::$user_id,
+				),
+			)
+		);
+		$delete_response = $this->server->dispatch( $delete_request );
+		$this->assertEquals( 200, $delete_response->get_status(), 'Destructive ability should accept DELETE' );
+
+		$post_request = new WP_REST_Request( 'POST', '/wp-abilities/v1/abilities/test/delete-user/run' );
+		$post_request->set_header( 'Content-Type', 'application/json' );
+		$post_request->set_body( wp_json_encode( array( 'input' => array( 'user_id' => self::$user_id ) ) ) );
+		$post_response = $this->server->dispatch( $post_request );
+		$this->assertEquals( 405, $post_response->get_status(), 'Destructive ability should reject POST with 405' );
+		$this->assertEquals( 'rest_ability_invalid_method', $post_response->get_data()['code'] );
+
+		// Test 4: OPTIONS should work for all abilities (part of ALLMETHODS)
+		$options_request  = new WP_REST_Request( 'OPTIONS', '/wp-abilities/v1/abilities/test/calculator/run' );
+		$options_response = $this->server->dispatch( $options_request );
+		$this->assertEquals( 200, $options_response->get_status(), 'OPTIONS should work for all abilities' );
+		$this->assertArrayHasKey( 'schema', $options_response->get_data(), 'OPTIONS should return schema' );
+	}
 }

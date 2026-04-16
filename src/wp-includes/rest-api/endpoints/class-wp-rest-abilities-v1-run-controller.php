@@ -54,12 +54,30 @@ class WP_REST_Abilities_V1_Run_Controller extends WP_REST_Controller {
 					),
 				),
 
-				// TODO: We register ALLMETHODS because at route registration time, we don't know which abilities
-				// exist or their annotations (`destructive`, `idempotent`, `readonly`). This is due to WordPress
-				// load order - routes are registered early, before plugins have registered their abilities.
-				// This approach works but could be improved with lazy route registration or a different
-				// architecture that allows type-specific routes after abilities are registered.
-				// This was the same issue that we ended up seeing with the Feature API.
+				/*
+				 * We register ALLMETHODS (GET, POST, PUT, PATCH, DELETE) because the correct HTTP method
+				 * depends on each ability's annotations, which aren't known until runtime.
+				 *
+				 * Abilities specify their semantic behavior through annotations:
+				 * - `readonly: true` → GET method (read-only operations)
+				 * - `destructive: true` + `idempotent: true` → DELETE method (destructive operations)
+				 * - Default (mutations) → POST method
+				 *
+				 * These annotations are set by plugins during the `wp_abilities_api_init` hook, which runs
+				 * after routes are registered during `rest_api_init`. This load order prevents us from
+				 * registering method-specific routes at registration time.
+				 *
+				 * The actual method validation occurs in check_ability_permissions() via validate_request_method(),
+				 * which returns a 405 Method Not Allowed error with appropriate messaging when the HTTP method
+				 * doesn't match the ability's annotations. This approach:
+				 * - Correctly implements REST API semantics (OPTIONS requests still work)
+				 * - Provides clear error messages for incorrect methods
+				 * - Has negligible performance impact (permission check occurs regardless)
+				 * - Avoids the complexity of lazy route registration or dynamic re-registration
+				 *
+				 * @see WP_REST_Abilities_V1_Run_Controller::validate_request_method()
+				 * @see WP_REST_Abilities_V1_Run_Controller::check_ability_permissions()
+				 */
 				array(
 					'methods'             => WP_REST_Server::ALLMETHODS,
 					'callback'            => array( $this, 'execute_ability' ),
