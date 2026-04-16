@@ -66,6 +66,7 @@ final class WP_Customize_Nav_Menus {
 		add_action( 'customize_controls_print_footer_scripts', array( $this, 'available_items_template' ) );
 		add_action( 'customize_preview_init', array( $this, 'customize_preview_init' ) );
 		add_action( 'customize_preview_init', array( $this, 'make_auto_draft_status_previewable' ) );
+		add_filter( 'get_pages', array( $this, 'filter_get_pages_to_include_auto_draft_posts' ), 10, 2 );
 
 		// Selective Refresh partials.
 		add_filter( 'customize_dynamic_partial_args', array( $this, 'customize_dynamic_partial_args' ), 10, 2 );
@@ -1359,6 +1360,63 @@ final class WP_Customize_Nav_Menus {
 	public function make_auto_draft_status_previewable() {
 		global $wp_post_statuses;
 		$wp_post_statuses['auto-draft']->protected = true;
+	}
+
+	/**
+	 * Filters the list of pages returned by get_pages() to include auto-draft posts
+	 * created during the customizer session.
+	 *
+	 * This ensures that auto-draft pages created through the customizer's menu interface
+	 * are available in dropdowns and other page listings, without requiring string manipulation
+	 * of the HTML output.
+	 *
+	 * @since 7.1.0
+	 *
+	 * @param WP_Post[] $pages       Array of page objects.
+	 * @param array     $parsed_args Array of get_pages() arguments.
+	 * @return WP_Post[] Modified array of page objects including auto-draft pages.
+	 */
+	public function filter_get_pages_to_include_auto_draft_posts( $pages, $parsed_args ) {
+		// Only apply this filter when in the customizer context.
+		if ( ! is_customize_preview() && ! ( defined( 'DOING_AJAX' ) && DOING_AJAX && isset( $_REQUEST['customize_messenger_channel'] ) ) ) {
+			return $pages;
+		}
+
+		$nav_menus_created_posts_setting = $this->manager->get_setting( 'nav_menus_created_posts' );
+		if ( ! $nav_menus_created_posts_setting || ! current_user_can( 'publish_pages' ) ) {
+			return $pages;
+		}
+
+		$auto_draft_page_ids = $nav_menus_created_posts_setting->value();
+		if ( empty( $auto_draft_page_ids ) ) {
+			return $pages;
+		}
+
+		// Get auto-draft pages and filter to only include pages.
+		$auto_draft_pages = array();
+		foreach ( $auto_draft_page_ids as $post_id ) {
+			$post = get_post( $post_id );
+			if ( $post && 'page' === $post->post_type ) {
+				// Check if this page is already in the results to avoid duplicates.
+				$already_included = false;
+				foreach ( $pages as $existing_page ) {
+					if ( $existing_page->ID === $post->ID ) {
+						$already_included = true;
+						break;
+					}
+				}
+				if ( ! $already_included ) {
+					$auto_draft_pages[] = $post;
+				}
+			}
+		}
+
+		// Merge auto-draft pages with existing pages.
+		if ( ! empty( $auto_draft_pages ) ) {
+			$pages = array_merge( $pages, $auto_draft_pages );
+		}
+
+		return $pages;
 	}
 
 	/**

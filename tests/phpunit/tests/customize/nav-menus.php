@@ -866,6 +866,94 @@ class Test_WP_Customize_Nav_Menus extends WP_UnitTestCase {
 	}
 
 	/**
+	 * Test filter_get_pages_to_include_auto_draft_posts.
+	 *
+	 * @covers WP_Customize_Nav_Menus::filter_get_pages_to_include_auto_draft_posts
+	 */
+	public function test_filter_get_pages_to_include_auto_draft_posts() {
+		// Create published pages.
+		$published_page_id = self::factory()->post->create(
+			array(
+				'post_type'   => 'page',
+				'post_status' => 'publish',
+				'post_title'  => 'Published Page',
+			)
+		);
+
+		// Create auto-draft pages.
+		$auto_draft_page_id = self::factory()->post->create(
+			array(
+				'post_type'   => 'page',
+				'post_status' => 'auto-draft',
+				'post_title'  => 'Auto Draft Page',
+			)
+		);
+
+		// Create auto-draft post (should not be included).
+		$auto_draft_post_id = self::factory()->post->create(
+			array(
+				'post_type'   => 'post',
+				'post_status' => 'auto-draft',
+				'post_title'  => 'Auto Draft Post',
+			)
+		);
+
+		// Create orphaned auto-draft page (not in nav_menus_created_posts, should not be included).
+		$orphan_page_id = self::factory()->post->create(
+			array(
+				'post_type'   => 'page',
+				'post_status' => 'auto-draft',
+				'post_title'  => 'Orphan Page',
+			)
+		);
+
+		do_action( 'customize_register', $this->wp_customize );
+		$menus = $this->wp_customize->nav_menus;
+
+		// Set up the nav_menus_created_posts setting.
+		$nav_menus_created_posts_setting = $this->wp_customize->get_setting( 'nav_menus_created_posts' );
+		$this->wp_customize->set_post_value(
+			$nav_menus_created_posts_setting->id,
+			array( $auto_draft_page_id, $auto_draft_post_id )
+		);
+		$nav_menus_created_posts_setting->preview();
+
+		// Test 1: Outside customizer context, filter should not apply.
+		$pages_before = get_pages( array( 'post_status' => 'publish,auto-draft' ) );
+		$page_ids_before = wp_list_pluck( $pages_before, 'ID' );
+		$this->assertNotContains( $auto_draft_page_id, $page_ids_before, 'Auto-draft page should not be in results outside customizer context' );
+
+		// Test 2: Mock customizer context using filter directly.
+		add_filter( 'customize_messenger_channel', '__return_true' );
+		$_REQUEST['customize_messenger_channel'] = 'preview-0';
+
+		// Get pages - the filter should now apply.
+		$pages = get_pages( array( 'post_status' => 'publish' ) );
+		$page_ids = wp_list_pluck( $pages, 'ID' );
+
+		// Verify that auto-draft page is included.
+		$this->assertContains( $auto_draft_page_id, $page_ids, 'Auto-draft page should be included' );
+		$this->assertContains( $published_page_id, $page_ids, 'Published page should still be included' );
+
+		// Verify that auto-draft post is NOT included (only pages).
+		$this->assertNotContains( $auto_draft_post_id, $page_ids, 'Auto-draft post should not be included' );
+
+		// Verify that orphaned auto-draft page is NOT included.
+		$this->assertNotContains( $orphan_page_id, $page_ids, 'Orphan auto-draft page should not be included' );
+
+		// Test 3: Test with user lacking publish_pages capability.
+		wp_set_current_user( self::factory()->user->create( array( 'role' => 'contributor' ) ) );
+		$pages_no_cap = get_pages( array( 'post_status' => 'publish' ) );
+		$page_ids_no_cap = wp_list_pluck( $pages_no_cap, 'ID' );
+		$this->assertNotContains( $auto_draft_page_id, $page_ids_no_cap, 'Auto-draft page should not be included for users without publish_pages capability' );
+
+		// Clean up.
+		unset( $_REQUEST['customize_messenger_channel'] );
+		remove_filter( 'customize_messenger_channel', '__return_true' );
+		wp_set_current_user( self::$administrator_id );
+	}
+
+	/**
 	 * Test sanitize_nav_menus_created_posts.
 	 *
 	 * @covers WP_Customize_Nav_Menus::sanitize_nav_menus_created_posts
