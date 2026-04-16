@@ -18,6 +18,10 @@ concurrency:
 jobs:
   assess:
     runs-on: ubuntu-latest
+    # Defense in depth: only run on declared triggers. Prevents wasted runs if a
+    # workflow file change in a branch causes GitHub to re-evaluate this workflow
+    # with an unexpected `push` event context.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout
         uses: actions/checkout@v4

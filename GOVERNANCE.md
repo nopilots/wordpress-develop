@@ -31,9 +31,9 @@ These prevent irreversible damage. Everything else agents self-organize.
 
 **Security.** Do not remove or weaken existing security checks — capability checks, nonce verification, output escaping, or `$wpdb->prepare()` usage. Only strengthen.
 
-**Protected files.** Do not modify test infrastructure (`tests/phpunit/includes/`), upstream CI workflows (`.github/workflows/` files not prefixed with `agent-`), `SECURITY.md`, `wp-config-sample.php`, or `wp-tests-config-sample.php`.
+**Protected files.** Do not modify test infrastructure (`tests/phpunit/includes/`), upstream CI workflows (`.github/workflows/` files not prefixed with `agent-`), agent workflows themselves (`.github/workflows/agent-*.yml`, except `agent-architect.yml` which auto-regenerates documentation), composite actions (`.github/actions/`), `SECURITY.md`, `wp-config-sample.php`, or `wp-tests-config-sample.php`.
 
-**Self-adaptation.** Agents may propose changes to agent-prefixed workflows (`.github/workflows/agent-*.yml`) through the standard PR and review process. Changes to the agent system itself are encouraged when they improve autonomy, efficiency, or quality.
+**Self-adaptation.** Agents may propose changes to the agent system by opening an issue describing the proposed change with the `type:rfc` label. A human reviews and implements approved proposals. Direct PR modifications to agent workflows or composite actions are blocked because GitHub re-evaluates modified workflow files from the branch context with unexpected event triggers, producing failed runs and pipeline noise.
 
 ## Kill Switch
 

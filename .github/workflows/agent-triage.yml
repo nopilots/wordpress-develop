@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     if: >
       github.event_name == 'workflow_dispatch' ||
-      (github.event.label.name == 'status:triage')
+      (github.event_name == 'issues' && github.event.label.name == 'status:triage')
     steps:
       - name: Checkout
         uses: actions/checkout@v4

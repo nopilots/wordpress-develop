@@ -134,20 +134,29 @@ Branch prefixes recognized: `agent/`, `copilot/`, `claude/`, `codex/`
 
 ## Workflow inventory
 
+22 agent workflows across three tiers. Triage and review use GitHub Models API; coordination, merging, safety, and cleanup are deterministic.
+
 | Name | File | Trigger | Purpose |
 |---|---|---|---|
-| Coordinator | agent-coordinator.yml | Schedule (6h), issue labeled, manual | Assigns issues to coding agents |
-| Draft Converter | agent-ready.yml | Schedule (30m), check_suite, manual | Converts draft PRs to ready for review |
-| Preflight Review | agent-review.yml | PR opened/ready_for_review, manual | Three-persona review + Flight Log post |
+| Triage | agent-triage.yml | Issue labeled `status:triage`, manual | Evaluates new issues via Models API and promotes to ready |
+| Coordinator | agent-coordinator.yml | Schedule (hourly), issue labeled, manual | Assigns ready issues to coding agents |
+| Draft Converter | agent-ready.yml | Schedule (10m), check_suite, manual | Converts draft PRs to ready for review |
+| Preflight Review | agent-review.yml | PR opened/ready_for_review, check_suite, manual | Three-persona review (Doc, Dalton, Pat). Per-commit re-review on push. 3-strike escalation. |
 | Auto-Merge | agent-merge.yml | PR review submitted, check_suite | Enables auto-merge on approved PRs |
 | Post-Merge | agent-cleanup.yml | PR merged | Closes linked issues, publishes Flight Log post, checks test coverage |
-| Revise | agent-revise.yml | PR review (changes_requested) | Creates revision issues, publishes Course Correction after 2 failures |
-| SITREP | agent-reflection.yml | Schedule (Wed/Sat), manual | Creates reflection issue + publishes SITREP post |
-| Issue Generator | agent-issue-generator.yml | Schedule (Mon/Thu), manual | Creates issues from TODOs + weekly planning |
+| SITREP | agent-reflection.yml | Schedule (Fri midnight), manual | Weekly status + metrics report. Creates reflection issue, publishes Flight Log SITREP. |
 | Upstream Sync | agent-sync-upstream.yml | Schedule (4x daily), manual | Syncs trunk, analyzes upstream diff, publishes Changelog |
-| Pulse | agent-pulse.yml | Schedule (4h), manual | Pipeline blockage detection and auto-remediation |
 | Branch Guard | agent-guard.yml | PR opened | Blocks agent PRs targeting trunk |
-| File Guard | agent-protected-files.yml | PR opened/updated | Blocks changes to protected files |
-| Safety | agent-safety.yml | PR opened, check_suite, manual | Circuit breaker, capacity limits, stale cleanup |
+| File Guard | agent-protected-files.yml | PR opened/updated | Blocks changes to protected files (test infra, non-agent workflows, agent workflows except architect, composite actions) |
+| Safety | agent-safety.yml | PR opened, check_suite, schedule (hourly), manual | Circuit breaker, capacity limits, stale-pin sweep, stale-triage promotion |
 | Health Check | agent-health-check.yml | Schedule (daily 6am UTC), manual | Verifies WP connection, categories, secrets, agents |
 | Learn | agent-learn.yml | Issue closed (safety:halt), PR closed (unmerged), manual | Analyzes failures, creates preventive issues |
+| Integrity Auditor | agent-auditor.yml | Schedule (daily 5am UTC), manual | Audits agent claims for hallucinations, repairs stale labels |
+| Notify Human | agent-notify.yml | Issue labeled/unlabeled `needs:human` | Sticky alerts on Flight Log for needs:human issues |
+| Commander | agent-commander.yml | Issue opened with `[PREFIX]` title | Owner commands: STATUS, EXEC, CANCEL, DIRECT, HOLD, AMEND |
+| Executive | agent-executive.yml | Schedule (Thu 6am UTC), manual | Weekly strategic assessment, gap detection, RFC issues |
+| Architect | agent-architect.yml | Push (workflows/actions changed), manual | Auto-regenerates ARCHITECTURE.md diagram |
+| QA | agent-qa.yml | Push (autopilot), schedule (daily 4am UTC), manual | Post-merge regression testing |
+| PHPUnit (Agent) | agent-phpunit.yml | PR (PHP changes), manual | Runs PHPUnit on agent PRs (upstream gates these on `WordPress/` prefix) |
+| Coding Standards (Agent) | agent-coding-standards.yml | PR (PHP changes), manual | Runs PHPCS on agent PRs |
+| Static Analysis (Agent) | agent-phpstan.yml | PR (PHP changes), manual | Runs PHPStan on agent PRs |

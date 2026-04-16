@@ -59,9 +59,23 @@ jobs:
                 }
               }
 
-              // Non-agent workflows
+              // Non-agent workflows are fully protected
               if (file.filename.startsWith('.github/workflows/') &&
                   !file.filename.includes('agent-')) {
+                violations.push(file.filename);
+              }
+
+              // Agent workflows are protected EXCEPT agent-architect.yml (auto-generated docs).
+              // Agents proposing workflow changes must do so via issues, not direct PR
+              // modifications, because GitHub re-evaluates modified workflow files from the
+              // branch context with a `push` event they don't expect — producing failed runs.
+              if (file.filename.startsWith('.github/workflows/agent-') &&
+                  file.filename !== '.github/workflows/agent-architect.yml') {
+                violations.push(file.filename);
+              }
+
+              // Composite actions are also part of the framework
+              if (file.filename.startsWith('.github/actions/')) {
                 violations.push(file.filename);
               }
             }

@@ -19,6 +19,9 @@ jobs:
   execute:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Defense in depth: only run on issue events. Prevents wasted runs from push
+    # events that re-evaluate this workflow file from a branch context.
+    if: github.event_name == 'issues'
     steps:
       - name: Checkout
         uses: actions/checkout@v4

@@ -134,19 +134,47 @@ jobs:
             const { data: existingReviews } = await github.rest.pulls.listReviews({
               owner, repo, pull_number: prNumber,
             });
-            const docDone = existingComments.some(c => c.body?.includes('**Doc** (Code Quality)'));
-            const daltonDone = existingComments.some(c => c.body?.includes('**Dalton** (Security)'));
-            const patDone = existingReviews.some(r => r.user?.login === 'nopilots-pat[bot]');
-
-            if (docDone && daltonDone && patDone) {
-              core.info('All personas already reviewed this PR.');
-              return;
-            }
-
-            // Get PR details
+            // Get PR details first to check head SHA for per-commit idempotency
             const { data: pr } = await github.rest.pulls.get({
               owner, repo, pull_number: prNumber,
             });
+
+            // Per-commit idempotency: only skip if already reviewed THIS exact commit.
+            // This lets Pat re-review after the agent pushes fixes (replaces revise workflow).
+            const headSha = pr.head.sha;
+            const shaMarker = `<!-- pat-reviewed-${headSha.substring(0, 7)} -->`;
+            const docMarker = `<!-- doc-reviewed-${headSha.substring(0, 7)} -->`;
+            const daltonMarker = `<!-- dalton-reviewed-${headSha.substring(0, 7)} -->`;
+
+            const docDone = existingComments.some(c => c.body?.includes(docMarker));
+            const daltonDone = existingComments.some(c => c.body?.includes(daltonMarker));
+            const patDone = existingComments.some(c => c.body?.includes(shaMarker));
+
+            if (docDone && daltonDone && patDone) {
+              core.info(`All personas already reviewed commit ${headSha.substring(0, 7)}.`);
+              return;
+            }
+
+            // Three-strike rule: if Pat has already requested changes 3+ times across all commits,
+            // escalate to human instead of continuing to review.
+            const patRequestChanges = existingReviews.filter(r =>
+              r.user?.login === 'nopilots-pat[bot]' && r.state === 'CHANGES_REQUESTED'
+            ).length;
+            if (patRequestChanges >= 3) {
+              const alreadyEscalated = pr.labels.some(l => l.name === 'needs:human');
+              if (!alreadyEscalated) {
+                await github.rest.issues.addLabels({
+                  owner, repo, issue_number: prNumber,
+                  labels: ['needs:human'],
+                });
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: prNumber,
+                  body: `Pat has requested changes ${patRequestChanges} times. Escalating to human review. The agent has not converged on a solution.`,
+                });
+                core.info(`Escalated PR #${prNumber} to needs:human after ${patRequestChanges} REQUEST_CHANGES rounds.`);
+              }
+              return;
+            }
 
             // Test gate: don't spend Models API budget on PRs whose tests are red or pending.
             // Green PRs proceed. Failed PRs get a one-time "waiting for test fixes" comment and skip.
@@ -215,10 +243,10 @@ jobs:
               }
 
               if (externalRuns.length === 0) {
-                core.info('Test gate: no external check runs found — proceeding (nothing to gate on).');
-              } else {
-                core.info(`Test gate: all ${externalRuns.length} external check(s) green — proceeding with review.`);
+                core.info('Test gate: no external check runs found yet — deferring review until tests register.');
+                return;
               }
+              core.info(`Test gate: all ${externalRuns.length} external check(s) green — proceeding with review.`);
             } catch (gateErr) {
               core.warning(`Test gate lookup failed, proceeding defensively: ${gateErr.message}`);
             }
@@ -340,8 +368,8 @@ jobs:
             // 1 & 2. Doc and Dalton review in parallel (independent of each other)
             async function runDocReview() {
               if (docDone) {
-                core.info('Doc already reviewed.');
-                return existingComments.find(c => c.body?.includes('**Doc**'))?.body || null;
+                core.info(`Doc already reviewed commit ${headSha.substring(0, 7)}.`);
+                return existingComments.find(c => c.body?.includes(docMarker))?.body || null;
               }
               const docPrompt = fs.readFileSync('.github/agent-personas/doc.md', 'utf8');
               const review = await askModel(docPrompt, `Review this pull request for code quality.\n\n${prContext}`);
@@ -349,7 +377,7 @@ jobs:
                 core.warning('Doc review missing rubric checklist.');
               }
               if (review) {
-                await postAsApp(process.env.DOC_TOKEN, review);
+                await postAsApp(process.env.DOC_TOKEN, `${docMarker}\n${review}`);
                 core.info('Doc reviewed.');
               } else {
                 core.warning('Doc review failed — Models API unavailable.');
@@ -359,8 +387,8 @@ jobs:
 
             async function runDaltonReview() {
               if (daltonDone) {
-                core.info('Dalton already reviewed.');
-                return existingComments.find(c => c.body?.includes('**Dalton**'))?.body || null;
+                core.info(`Dalton already reviewed commit ${headSha.substring(0, 7)}.`);
+                return existingComments.find(c => c.body?.includes(daltonMarker))?.body || null;
               }
               const daltonPrompt = fs.readFileSync('.github/agent-personas/dalton.md', 'utf8');
               const review = await askModel(daltonPrompt, `Review this pull request for security concerns.\n\n${prContext}`);
@@ -368,7 +396,7 @@ jobs:
                 core.warning('Dalton review missing rubric checklist.');
               }
               if (review) {
-                await postAsApp(process.env.DALTON_TOKEN, review);
+                await postAsApp(process.env.DALTON_TOKEN, `${daltonMarker}\n${review}`);
                 core.info('Dalton reviewed.');
               } else {
                 core.warning('Dalton review failed — Models API unavailable.');
@@ -383,7 +411,7 @@ jobs:
 
             // 3. Pat reads summaries and makes the decision
             if (patDone) {
-              core.info('Pat already reviewed.');
+              core.info(`Pat already reviewed commit ${headSha.substring(0, 7)}.`);
               return;
             }
             const patPrompt = fs.readFileSync('.github/agent-personas/pat.md', 'utf8')
@@ -392,12 +420,35 @@ jobs:
             const docSummary = docReview ? docReview.substring(0, 800) : '_Review unavailable._';
             const daltonSummary = daltonReview ? daltonReview.substring(0, 800) : '_Review unavailable._';
 
+            // Build test status summary for Pat. The test gate already filtered out failed/pending
+            // PRs, but pass status explicitly so Pat can fill in the TESTS rubric item correctly.
+            let testStatus = 'PASS — all external checks green';
+            try {
+              const { data: checksData } = await github.rest.checks.listForRef({
+                owner, repo, ref: pr.head.sha, per_page: 100,
+              });
+              const externalRuns = (checksData.check_runs || []).filter(
+                (c) => !CREW_CHECK_NAME_PATTERNS.some((p) => p.test(c.name || ''))
+              );
+              const failed = externalRuns.filter(
+                (c) => c.status === 'completed' &&
+                  ['failure', 'timed_out', 'cancelled', 'action_required'].includes(c.conclusion)
+              );
+              if (failed.length > 0) {
+                testStatus = `FAIL — ${failed.length} check(s) failing: ${failed.map(c => c.name).join(', ')}`;
+              }
+            } catch (e) {
+              testStatus = 'UNKNOWN — could not fetch check status';
+            }
+
             const patContext = [
               `# PR #${prNumber}: ${pr.title}`,
               '',
               pr.body || 'No description.',
               '',
               wasTruncated ? `**Warning:** The diff was truncated. ${diff.length - maxDiff} characters were not reviewed by Doc or Dalton.\n` : '',
+              `## Test status\n${testStatus}`,
+              '',
               '## Doc (Code Quality)',
               docSummary,
               '',
@@ -409,6 +460,8 @@ jobs:
 
             if (patReview) {
               const event = patReview.includes('DECISION: APPROVE') ? 'APPROVE' : 'REQUEST_CHANGES';
+              // Post a comment with the SHA marker for per-commit idempotency
+              await postAsApp(process.env.PAT_TOKEN, `${shaMarker}\n${patReview}`);
               await reviewAsApp(process.env.PAT_TOKEN, patReview, event);
               core.info(`Pat: ${event}`);
 

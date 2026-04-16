@@ -75,6 +75,19 @@ jobs:
               return;
             }
 
+            // Backlog backoff: don't add work if existing PRs are halted or unstable.
+            // Clear the existing pipeline before adding more.
+            const { data: openPRs } = await github.rest.pulls.list({
+              owner, repo, state: 'open', per_page: 50,
+            });
+            const haltedPRs = openPRs.filter(p =>
+              p.labels.some(l => l.name === 'safety:halt')
+            );
+            if (haltedPRs.length > 0) {
+              core.info(`Skipping assignment: ${haltedPRs.length} PR(s) currently halted. Clear those first.`);
+              return;
+            }
+
             // Find unassigned status:ready issues
             const { data: readyIssues } = await github.rest.issues.listForRepo({
               owner, repo,
@@ -184,7 +197,7 @@ jobs:
             if (patOwner) core.info(`Will remove PAT owner (${patOwner}) from assignees after each assignment`);
 
             // Pace assignments based on system health from Flight Log
-            let assignLimit = 3;
+            let assignLimit = 2;
             const sitrepContext = process.env.SITREP_CONTEXT || '';
             // If sitrep mentions low approval rate or zero merges, throttle to 1
             if (sitrepContext.match(/approval.*?[0-4]\d%/i) || sitrepContext.match(/merged.*?:?\s*0\b/i)) {

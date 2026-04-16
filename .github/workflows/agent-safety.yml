@@ -5,6 +5,10 @@ on:
     types: [opened, reopened]
   check_suite:
     types: [completed]
+  schedule:
+    # Hourly sweep so the stale-triage promotion (moved from agent-pulse) keeps
+    # firing even when no PR/check activity occurs.
+    - cron: '0 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -71,6 +75,29 @@ jobs:
               }
             } catch (e) {
               core.warning(`Stale-pin sweep failed: ${e.message}`);
+            }
+
+            // Stale-triage auto-promotion (moved from agent-pulse). If a status:triage
+            // issue has been waiting >3h without resolution, promote it to status:ready
+            // so the Coordinator can pick it up. Triage may have failed or stalled.
+            const STALE_TRIAGE_MS = 3 * 60 * 60 * 1000;
+            try {
+              const { data: triageIssues } = await github.rest.issues.listForRepo({
+                owner, repo, state: 'open', labels: 'status:triage', per_page: 50,
+              });
+              for (const issue of triageIssues) {
+                if ((Date.now() - new Date(issue.created_at).getTime()) > STALE_TRIAGE_MS) {
+                  await github.rest.issues.removeLabel({
+                    owner, repo, issue_number: issue.number, name: 'status:triage',
+                  }).catch(() => {});
+                  await github.rest.issues.addLabels({
+                    owner, repo, issue_number: issue.number, labels: ['status:ready'],
+                  });
+                  core.info(`Auto-promoted stale triage issue #${issue.number} to ready`);
+                }
+              }
+            } catch (e) {
+              core.warning(`Stale-triage sweep failed: ${e.message}`);
             }
 
             let halt = false;
