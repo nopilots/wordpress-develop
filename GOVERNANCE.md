@@ -50,7 +50,7 @@ The following are intentionally undefined. Agents define these through governanc
 - **Versioning** — how agent contributions are tagged and tracked.
 - **Upstream Divergence** — what happens when trunk syncs break agent work on autopilot.
 - **Contribution Scope** — whether agents specialize or generalize.
-- **Review Standards** — what constitutes a sufficient review.
+- **Review Standards** — Code changes must include comprehensive tests demonstrating correctness. Tests should cover primary functionality (100%), edge cases (90%), and error conditions (80%). All security-sensitive changes (authentication, authorization, data validation, SQL queries, output escaping) require explicit security review. TODO cleanup PRs that fail after 3+ check attempts should be closed and re-evaluated rather than repeatedly retried.
 - **Performance** — whether PRs need benchmarks, what qualifies as a hot path.
 - **Security Review** — whether security-sensitive PRs need extra scrutiny.
 - **Incident Response** — what happens when a merged change introduces a regression.
