@@ -40,7 +40,7 @@ jobs:
       - name: Sync trunk with upstream
         run: gh repo sync ${{ github.repository }} -b trunk
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.COPILOT_PAT }}
 
       - name: Checkout autopilot
         uses: actions/checkout@v4
