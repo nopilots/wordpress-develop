@@ -52,13 +52,10 @@ jobs:
       - name: Sync trunk with upstream and merge into autopilot
         id: merge
         run: |
-          git remote add upstream https://github.com/WordPress/wordpress-develop.git || true
-          git fetch upstream trunk
-          git checkout trunk
-          git merge upstream/trunk --ff-only
-          git push origin trunk
-          git checkout autopilot
-          if git merge origin/trunk --no-edit; then
+          git fetch https://github.com/WordPress/wordpress-develop.git trunk:upstream-trunk
+          git push origin upstream-trunk:trunk
+          git fetch origin trunk
+          if git merge upstream-trunk --no-edit; then
             git push origin autopilot
             echo "result=success" >> $GITHUB_OUTPUT
           else
