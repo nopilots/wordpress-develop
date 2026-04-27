@@ -42,19 +42,17 @@ jobs:
         with:
           ref: autopilot
           fetch-depth: 0
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ secrets.COPILOT_PAT }}
 
       - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Sync trunk with upstream and merge into autopilot
+      - name: Merge upstream trunk into autopilot
         id: merge
         run: |
           git fetch https://github.com/WordPress/wordpress-develop.git trunk:upstream-trunk
-          git push origin upstream-trunk:trunk
-          git fetch origin trunk
           if git merge upstream-trunk --no-edit; then
             git push origin autopilot
             echo "result=success" >> $GITHUB_OUTPUT
