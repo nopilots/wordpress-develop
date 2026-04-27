@@ -42,7 +42,7 @@ jobs:
         with:
           ref: autopilot
           fetch-depth: 0
-          token: ${{ secrets.COPILOT_PAT }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Configure git
         run: |
