@@ -1,0 +1,292 @@
+name: Innovator
+
+on:
+  schedule:
+    - cron: '0 0 * * 2,6'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+  pull-requests: read
+  models: read
+
+concurrency:
+  group: agent-innovator
+  cancel-in-progress: true
+
+jobs:
+  innovate:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read executive direction from Flight Log
+        id: read-executive
+        uses: ./.github/actions/read-from-flight-log
+        with:
+          category-slug: executive
+          count: '3'
+          wp-url: ${{ secrets.WP_URL }}
+          wp-auth: ${{ secrets.WP_AUTH }}
+
+      - name: Read sitrep from Flight Log
+        id: read-sitrep
+        uses: ./.github/actions/read-from-flight-log
+        with:
+          category-slug: sitrep
+          count: '3'
+          wp-url: ${{ secrets.WP_URL }}
+          wp-auth: ${{ secrets.WP_AUTH }}
+
+      - name: Read merge log from Flight Log
+        id: read-log
+        uses: ./.github/actions/read-from-flight-log
+        with:
+          category-slug: log
+          count: '10'
+          wp-url: ${{ secrets.WP_URL }}
+          wp-auth: ${{ secrets.WP_AUTH }}
+
+      - name: Analyze and propose work
+        uses: actions/github-script@v7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FL_EXECUTIVE: ${{ steps.read-executive.outputs.summary }}
+          FL_SITREP: ${{ steps.read-sitrep.outputs.summary }}
+          FL_LOG: ${{ steps.read-log.outputs.summary }}
+        with:
+          script: |
+            const { execSync } = require('child_process');
+            const fs = require('fs');
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // Kill switch
+            const { data: killSwitch } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'system:off', per_page: 1,
+            });
+            if (killSwitch.length > 0) {
+              core.info('System is off.');
+              return;
+            }
+
+            // Pipeline pressure: don't create issues if too many already open
+            const { data: openAgentIssues } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'agent', per_page: 100,
+            });
+            if (openAgentIssues.length >= 10) {
+              core.info(`Pipeline has ${openAgentIssues.length} open agent issues. Skipping.`);
+              return;
+            }
+
+            // Cooldown: skip if we created issues in the last 48h
+            const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+            const recentInnovator = openAgentIssues.some(i =>
+              i.title.startsWith('[Innovator]') && i.created_at > twoDaysAgo
+            );
+            if (recentInnovator) {
+              core.info('Recent Innovator issue still open. Skipping.');
+              return;
+            }
+
+            // Gather all existing titles for dedup
+            const { data: allIssues } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'all', labels: 'agent', per_page: 100,
+            });
+            const existingTitles = allIssues.map(i => i.title.toLowerCase());
+
+            // Add Flight Log merge history to dedup
+            const logContext = process.env.FL_LOG || '';
+            for (const line of logContext.split('\n').filter(Boolean)) {
+              existingTitles.push(line.toLowerCase());
+            }
+
+            // --- Lens 1: Codebase health signals ---
+            let healthSignals = '';
+
+            // Deprecated function usage
+            try {
+              const deprecated = execSync(
+                'grep -rn "\\b_deprecated_function\\b" src/wp-includes/ src/wp-admin/ --include="*.php" | grep -v "function _deprecated_function" | head -10',
+                { encoding: 'utf8', timeout: 15000 }
+              ).trim();
+              if (deprecated) healthSignals += `\n## Deprecated function calls\n${deprecated}\n`;
+            } catch (e) { /* no matches */ }
+
+            // Large functions (>100 lines between function and closing brace)
+            try {
+              const largeFns = execSync(
+                'grep -rn "^\\s*function " src/wp-includes/ src/wp-admin/ --include="*.php" -l | head -20',
+                { encoding: 'utf8', timeout: 15000 }
+              ).trim();
+              if (largeFns) healthSignals += `\n## Files with functions (check for complexity)\n${largeFns}\n`;
+            } catch (e) { /* no matches */ }
+
+            // Files missing test coverage (wp-includes files with no corresponding test)
+            try {
+              const coreFiles = execSync(
+                'ls src/wp-includes/class-wp-*.php 2>/dev/null | head -20',
+                { encoding: 'utf8', timeout: 10000 }
+              ).trim().split('\n').filter(Boolean);
+              const testFiles = execSync(
+                'ls tests/phpunit/tests/**/*.php 2>/dev/null | head -200',
+                { encoding: 'utf8', timeout: 10000 }
+              ).trim().toLowerCase();
+              const untested = coreFiles.filter(f => {
+                const base = f.split('/').pop().replace('class-', '').replace('.php', '');
+                return !testFiles.includes(base);
+              }).slice(0, 10);
+              if (untested.length > 0) {
+                healthSignals += `\n## Core classes with no obvious test file\n${untested.join('\n')}\n`;
+              }
+            } catch (e) { /* ignore */ }
+
+            // --- Lens 2: Recent failures ---
+            let failureContext = '';
+            const { data: haltIssues } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'all', labels: 'safety:halt', per_page: 10,
+            });
+            if (haltIssues.length > 0) {
+              failureContext = haltIssues
+                .map(i => `- #${i.number}: ${i.title} (${i.state})`)
+                .join('\n');
+            }
+
+            // --- Lens 3: Recent PR patterns ---
+            let prContext = '';
+            const { data: recentPRs } = await github.rest.pulls.list({
+              owner, repo, state: 'closed', base: 'autopilot', sort: 'updated',
+              direction: 'desc', per_page: 15,
+            });
+            const merged = recentPRs.filter(p => p.merged_at);
+            const rejected = recentPRs.filter(p => !p.merged_at);
+            prContext = `Merged: ${merged.length}, Rejected: ${rejected.length}\n`;
+            prContext += merged.slice(0, 5).map(p => `- #${p.number}: ${p.title}`).join('\n');
+
+            // Read governance and architecture for context
+            const governance = fs.readFileSync('GOVERNANCE.md', 'utf8').substring(0, 1500);
+
+            const model = ['openai/gpt-4o-mini', 'anthropic/claude-haiku'][new Date().getHours() % 2];
+
+            const res = await fetch('https://models.github.ai/inference/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${process.env.GITHUB_TOKEN}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                model,
+                messages: [{
+                  role: 'system',
+                  content: `You are the Innovator for an autonomous AI-governed WordPress fork called No Pilots. Your job is to find 1-2 concrete, high-value improvements based on real data from the codebase and system health.
+
+            Rules:
+            - Propose exactly 1 or 2 issues. Never more.
+            - Each issue must name specific files or functions to change.
+            - Each issue must be implementable by a coding agent in a single PR.
+            - Do NOT propose speculative features, RFCs, or architectural changes.
+            - Do NOT propose anything that overlaps with existing issues (listed below).
+            - Do NOT propose work that was already completed (merge log below).
+            - Align with the Executive's strategic direction when available.
+            - Focus on: test coverage, code quality, deprecated API migration, bug prevention.
+
+            Respond in this exact format (repeat for each issue):
+            ---
+            TITLE: [Innovator] (specific, actionable title under 80 chars)
+            CONTEXT: (what you found in the data and why it matters — 1-2 sentences)
+            TASK:
+            1. (first step)
+            2. (second step)
+            3. (third step)
+            SCOPE: (what NOT to change — 1 sentence)
+            ---`,
+                }, {
+                  role: 'user',
+                  content: `Analyze this data and propose improvements.
+
+            ## Executive Direction
+            ${process.env.FL_EXECUTIVE || 'No executive assessments available.'}
+
+            ## System Health (SITREP)
+            ${process.env.FL_SITREP || 'No SITREP available.'}
+
+            ## Codebase Signals
+            ${healthSignals || 'No signals gathered.'}
+
+            ## Recent Failures
+            ${failureContext || 'No recent safety halts.'}
+
+            ## PR Activity
+            ${prContext}
+
+            ## Existing Issues (do not duplicate)
+            ${allIssues.slice(0, 30).map(i => `- ${i.title}`).join('\n')}
+
+            ## Recently Completed Work (do not re-propose)
+            ${logContext.substring(0, 1000) || 'No recent merges logged.'}
+
+            ## Governance
+            ${governance}`,
+                }],
+                max_tokens: 800,
+                temperature: 0.4,
+              }),
+            });
+
+            if (!res.ok) {
+              core.warning(`Models API returned ${res.status}. Skipping this run.`);
+              return;
+            }
+
+            const result = await res.json();
+            const response = result.choices?.[0]?.message?.content || '';
+
+            if (!response) {
+              core.warning('Empty response from model.');
+              return;
+            }
+
+            // Parse issues from response
+            const issueBlocks = response.split('---').filter(b => b.includes('TITLE:'));
+            let created = 0;
+
+            for (const block of issueBlocks.slice(0, 2)) {
+              const title = block.match(/TITLE:\s*(.+)/)?.[1]?.trim();
+              const context = block.match(/CONTEXT:\s*(.+)/)?.[1]?.trim();
+              const taskMatch = block.match(/TASK:\s*([\s\S]*?)(?=SCOPE:|$)/);
+              const task = taskMatch?.[1]?.trim();
+              const scope = block.match(/SCOPE:\s*(.+)/)?.[1]?.trim();
+
+              if (!title || !task) continue;
+
+              // Dedup check
+              if (existingTitles.some(t => t.includes(title.toLowerCase().replace('[innovator] ', '')))) {
+                core.info(`Skipping duplicate: ${title}`);
+                continue;
+              }
+
+              const body = [
+                context || '',
+                '',
+                '## Task',
+                '',
+                task,
+                '',
+                scope ? `## Scope\n\n${scope}` : '',
+              ].filter(Boolean).join('\n');
+
+              await github.rest.issues.create({
+                owner, repo,
+                title,
+                body,
+                labels: ['agent', 'status:triage'],
+              });
+
+              core.info(`Created: ${title}`);
+              created++;
+            }
+
+            core.info(`Innovator created ${created} issue(s).`);
