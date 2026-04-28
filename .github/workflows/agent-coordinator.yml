@@ -75,17 +75,27 @@ jobs:
               return;
             }
 
-            // Backlog backoff: don't add work if existing PRs are halted or unstable.
-            // Clear the existing pipeline before adding more.
+            // Backlog backoff: throttle if existing PRs are halted or unstable.
+            // A single stuck PR shouldn't freeze the whole system — only block
+            // when multiple PRs are halted (systemic failure) or reduce throughput
+            // for a single halt. Halts older than 24h are ignored (stale).
             const { data: openPRs } = await github.rest.pulls.list({
               owner, repo, state: 'open', per_page: 50,
             });
             const haltedPRs = openPRs.filter(p =>
               p.labels.some(l => l.name === 'safety:halt')
             );
-            if (haltedPRs.length > 0) {
-              core.info(`Skipping assignment: ${haltedPRs.length} PR(s) currently halted. Clear those first.`);
+            const freshHalts = haltedPRs.filter(p => {
+              const haltAge = Date.now() - new Date(p.updated_at).getTime();
+              return haltAge < 24 * 60 * 60 * 1000;
+            });
+            if (freshHalts.length >= 2) {
+              core.info(`Blocking assignment: ${freshHalts.length} PRs halted in the last 24h. Systemic issue — clear those first.`);
               return;
+            }
+            const throttleForHalt = freshHalts.length === 1;
+            if (throttleForHalt) {
+              core.info(`1 PR halted — will throttle to 1 assignment this cycle.`);
             }
 
             // Find unassigned status:ready issues
@@ -203,6 +213,9 @@ jobs:
             if (sitrepContext.match(/approval.*?[0-4]\d%/i) || sitrepContext.match(/merged.*?:?\s*0\b/i)) {
               assignLimit = 1;
               core.info('Throttling to 1 assignment — sitrep shows low velocity.');
+            }
+            if (throttleForHalt) {
+              assignLimit = Math.min(assignLimit, 1);
             }
 
             // Assign issues
