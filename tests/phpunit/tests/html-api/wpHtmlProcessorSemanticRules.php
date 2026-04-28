@@ -425,59 +425,6 @@ class Tests_HtmlApi_WpHtmlProcessorSemanticRules extends WP_UnitTestCase {
 		$this->assertNull( $processor->get_attribute_names_with_prefix( '' ), 'Should have ignored any attributes on the tag.' );
 	}
 
-	/**
-	 * Ensures the form element pointer from a fragment context survives a backward seek.
-	 */
-	public function test_seek_restores_form_pointer_from_fragment_context() {
-		$processor = $this->create_fragment_in_form_context( '<div><form id="nested"></form></div>' );
-
-		$this->assertTrue( $processor->next_tag(), 'Failed to find first tag in fragment.' );
-		$processor->set_bookmark( 'restart' );
-
-		$this->assertFalse(
-			$processor->next_tag( array( 'tag_name' => 'form' ) ),
-			'Nested form should be ignored before seeking.'
-		);
-
-		$this->assertTrue( $processor->seek( 'restart' ), 'Seek should succeed.' );
-
-		$this->assertFalse(
-			$processor->next_tag( array( 'tag_name' => 'form' ) ),
-			'Nested form should remain ignored after seeking backwards.'
-		);
-	}
-
-	/**
-	 * Creates a fragment parser using a FORM context element.
-	 *
-	 * @param string $html HTML fragment to process.
-	 * @return WP_HTML_Processor
-	 */
-	private function create_fragment_in_form_context( string $html ): WP_HTML_Processor {
-		$context_processor = WP_HTML_Processor::create_full_parser( '<!DOCTYPE html><body><form>' );
-
-		$this->assertNotNull( $context_processor, 'Failed to create context processor.' );
-
-		while ( $context_processor->next_tag() ) {
-			if ( ! $context_processor->is_virtual() ) {
-				$context_processor->set_bookmark( 'context' );
-			}
-		}
-
-		$this->assertTrue( $context_processor->has_bookmark( 'context' ), 'Context bookmark not set.' );
-		$this->assertTrue( $context_processor->seek( 'context' ), 'Unable to seek to context element.' );
-		$this->assertSame( 'FORM', $context_processor->get_tag(), 'Context element should be FORM.' );
-
-		$create_fragment = new ReflectionMethod( WP_HTML_Processor::class, 'create_fragment_at_current_node' );
-		$create_fragment->setAccessible( true );
-
-		$fragment_processor = $create_fragment->invoke( $context_processor, $html );
-
-		$this->assertInstanceOf( WP_HTML_Processor::class, $fragment_processor, 'Failed to create fragment processor.' );
-
-		return $fragment_processor;
-	}
-
 	/*******************************************************************
 	 * RULES FOR "IN TABLE" MODE
 	 *******************************************************************/

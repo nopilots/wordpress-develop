@@ -1,33 +1,36 @@
-## Description
+<!--
+Hi there! Thanks for contributing to WordPress!
 
-<!-- What does this PR do? Why? -->
+Pull Requests in this GitHub repository **must** be linked to a ticket in the WordPress Core Trac instance (https://core.trac.wordpress.org), and are only used for code review. **No pull requests will be merged on GitHub.**
 
-## Related Issue
+See the WordPress Handbook page on using PRs for Code Review more information: https://make.wordpress.org/core/handbook/contribute/git/github-pull-requests-for-code-review/
 
-<!-- Closes #XX -->
+If this is your first time contributing, you may also find reviewing these guides first to be helpful:
+- FAQs for New Contributors: https://make.wordpress.org/core/handbook/tutorials/faq-for-new-contributors/
+- Contributing with Code Guide: https://make.wordpress.org/core/handbook/contribute/
+- WordPress Coding Standards: https://make.wordpress.org/core/handbook/best-practices/coding-standards/
+- Inline Documentation Standards: https://make.wordpress.org/core/handbook/best-practices/inline-documentation-standards/
+- Browser Support Policies: https://make.wordpress.org/core/handbook/best-practices/browser-support/
+- Proper spelling and grammar related best practices: https://make.wordpress.org/core/handbook/best-practices/spelling/
+- ✨ If you are using AI tools, you must adhere to the AI Guidelines: https://make.wordpress.org/ai/handbook/ai-guidelines/
+-->
 
-## Changes
+<!-- Insert a description of your changes here -->
 
-<!-- Bulleted list of specific changes -->
+Trac ticket: <!-- insert a link to the WordPress Trac ticket here -->
 
-## Testing
+## Use of AI Tools
 
-<!-- Describe tests added and how to verify -->
+<!--
+You are free to use artificial intelligence (AI) tooling to contribute, but you must disclose what tooling you are using and to what extent a pull request has been authored by AI. It is your responsibility to review and take responsibility for what AI generates. See the WordPress AI Guidelines: <https://make.wordpress.org/ai/handbook/ai-guidelines/>.
 
-## AI Disclosure
+Example disclosure:
 
-- **AI-authored:** Yes / Partial / No
-- **Agent:** <!-- e.g., GitHub Copilot coding agent -->
-- **Model:** <!-- e.g., GPT-4.1, Claude Sonnet, etc. -->
-
-## Governance Checklist
-
-- [ ] Code follows WordPress coding standards
-- [ ] Tests are included for all changes
-- [ ] No upstream CI workflows were modified
-- [ ] GOVERNANCE.md rules have been followed
-- [ ] PR has appropriate `type:` label
+AI assistance: Yes
+Tool(s): GitHub Copilot, ChatGPT
+Model(s): GPT-5.1
+Used for: Initial code skeleton and test suggestions; final implementation and tests were reviewed and edited by me.
+-->
 
 ---
-
-*This repository is governed by [GOVERNANCE.md](/GOVERNANCE.md). PRs are auto-merged when governance conditions are met.*
+**This Pull Request is for code review only. Please keep all other discussion in the Trac ticket. Do not merge this Pull Request. See [GitHub Pull Requests for Code Review](https://make.wordpress.org/core/handbook/contribute/git/github-pull-requests-for-code-review/) in the Core Handbook for more details.**

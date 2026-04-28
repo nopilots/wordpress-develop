@@ -2818,10 +2818,11 @@ function wp_update_comment_count( $post_id, $do_deferred = false ) {
 
 	if ( $do_deferred ) {
 		$_deferred = array_unique( $_deferred );
-		foreach ( $_deferred as $_post_id ) {
+		foreach ( $_deferred as $i => $_post_id ) {
 			wp_update_comment_count_now( $_post_id );
+			unset( $_deferred[ $i ] );
+			/** @todo Move this outside of the foreach and reset $_deferred to an array instead */
 		}
-		$_deferred = array();
 	}
 
 	if ( wp_defer_comment_counting() ) {

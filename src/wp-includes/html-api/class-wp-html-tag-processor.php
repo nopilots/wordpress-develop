@@ -1962,9 +1962,11 @@ class WP_HTML_Tag_Processor {
 				 * is therefore not possible to parse a CDATA section containing
 				 * a `>` in the HTML syntax.
 				 *
-				 * Note that CDATA sections in foreign content (SVG and MathML) are
-				 * handled earlier in this function and never reach this code path.
-				 * @see self::STATE_CDATA_NODE
+				 * Inside foreign elements there is a discrepancy between browsers
+				 * and the specification on this.
+				 *
+				 * @todo Track whether the Tag Processor is inside a foreign element
+				 *       and require the proper closing `]]>` in those cases.
 				 */
 				if (
 					$this->token_length >= 10 &&
@@ -2050,12 +2052,8 @@ class WP_HTML_Tag_Processor {
 				 *                     [#x10000-#xEFFFF]
 				 * > NameChar      ::= NameStartChar | "-" | "." | [0-9] | #xB7 | [#x0300-#x036F] | [#x203F-#x2040]
 				 *
-				 * The XML spec explicitly reserves the target name "xml" (in any letter-case
-				 * combination) for the XML declaration, which is not a processing instruction:
-				 *
-				 * > PITarget ::= Name - (('X' | 'x') ('M' | 'm') ('L' | 'l'))
-				 *
-				 * Therefore `<?xml ... ?>` must not be classified as a PI node lookalike.
+				 * @todo Processing instruction nodes in SGML may contain any kind of markup. XML defines a
+				 *       special case with `<?xml ... ?>` syntax, but the `?` is part of the bogus comment.
 				 *
 				 * @see https://www.w3.org/TR/2006/REC-xml11-20060816/#NT-PITarget
 				 */
@@ -2065,14 +2063,6 @@ class WP_HTML_Tag_Processor {
 
 					if ( 0 < $pi_target_length ) {
 						$pi_target_length += strspn( $comment_text, 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:_-.', $pi_target_length );
-
-						/*
-						 * The target name "xml" (case-insensitive) is reserved for the XML
-						 * declaration and must not be treated as a PI node lookalike.
-						 */
-						if ( 3 === $pi_target_length && 0 === strcasecmp( substr( $comment_text, 0, 3 ), 'xml' ) ) {
-							return true;
-						}
 
 						$this->comment_type       = self::COMMENT_AS_PI_NODE_LOOKALIKE;
 						$this->tag_name_starts_at = $this->token_starts_at + 2;
@@ -3721,18 +3711,9 @@ class WP_HTML_Tag_Processor {
 		 * for security reasons (to avoid joining together strings that were safe
 		 * when separated, but not when joined).
 		 *
-		 * Inside MathML text integration points (mi, mo, mn, ms, mtext) and HTML
-		 * integration points (SVG foreignObject, desc, title; MathML annotation-xml
-		 * with encoding="text/html" or "application/xhtml+xml"), text is processed
-		 * according to the HTML insertion mode rather than foreign content rules.
-		 * The WP_HTML_Processor handles this by calling change_parsing_namespace( 'html' )
-		 * when those elements are pushed onto the stack of open elements, so the
-		 * namespace check below already correctly strips NULL bytes inside integration
-		 * points when parsing via WP_HTML_Processor.
-		 *
-		 * @see WP_HTML_Processor where the stack-of-open-elements push handler calls change_parsing_namespace().
-		 * @see https://html.spec.whatwg.org/#mathml-text-integration-point
-		 * @see https://html.spec.whatwg.org/#html-integration-point
+		 * @todo Inside HTML integration points and MathML integration points, the
+		 *       text is processed according to the insertion mode, not according
+		 *       to the foreign content rules. This should strip the NULL bytes.
 		 */
 		return ( '#text' === $tag_name && 'html' === $this->get_namespace() )
 			? str_replace( "\x00", '', $decoded )
@@ -3931,19 +3912,9 @@ class WP_HTML_Tag_Processor {
 				 * safe to leave them escaped and this can prevent other code from
 				 * naively detecting tags within the contents.
 				 *
-				 * Multiline TEXTAREA content is prefixed with a newline for aesthetics,
-				 * so the content starts on a new line in the HTML source. Since HTML
-				 * ignores the first newline after a TEXTAREA opening tag, the decoded
-				 * value is unchanged by the prefix.
+				 * @todo It would be useful to prefix a multiline replacement text
+				 *       with a newline, but not necessary. This is for aesthetics.
 				 */
-				if (
-					'TEXTAREA' === $this->get_tag() &&
-					str_contains( $plaintext_content, "\n" ) &&
-					"\n" !== ( $plaintext_content[0] ?? '' )
-				) {
-					$plaintext_content = "\n{$plaintext_content}";
-				}
-
 				$this->lexical_updates['modifiable text'] = new WP_HTML_Text_Replacement(
 					$this->text_starts_at,
 					$this->text_length,
@@ -4081,35 +4052,10 @@ class WP_HTML_Tag_Processor {
 			case 'speculationrules':
 				return 'json';
 
-		}
-
-		/*
-		 * Use MIME type parsing to recognize JSON, including structured syntax suffixes
-		 * and optional parameters (for example, application/ld+json; charset=utf-8).
-		 */
-		$json_mime_type = $type_string;
-
-		if ( str_contains( $json_mime_type, ';' ) ) {
-			list( $json_mime_type ) = explode( ';', $json_mime_type, 2 );
-			$json_mime_type         = trim( $json_mime_type );
-		}
-
-		if ( wp_is_json_media_type( $json_mime_type ) ) {
-			return 'json';
-		}
-
-		if (
-			preg_match(
-				'/^(?<type>[a-z0-9][a-z0-9!#$&^_.+-]*)\/(?<subtype>[a-z0-9][a-z0-9!#$&^_.+-]*)$/',
-				$json_mime_type,
-				$mime_type
-			)
-		) {
-			$subtype = $mime_type['subtype'];
-
-			if ( 'json' === $subtype || str_ends_with( $subtype, '+json' ) ) {
+			/** @todo Rely on a full MIME parser for determining JSON content. */
+			case 'application/json':
+			case 'text/json':
 				return 'json';
-			}
 		}
 
 		/*

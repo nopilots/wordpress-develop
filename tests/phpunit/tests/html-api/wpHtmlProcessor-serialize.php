@@ -282,27 +282,6 @@ class Tests_HtmlApi_WpHtmlProcessor_Serialize extends WP_UnitTestCase {
 			'SCRIPT content'       => array( "<script>alert(\x00)</script>", "<script>alert(\u{FFFD})</script>" ),
 			'STYLE content'        => array( "<style>\x00 {}</style>", "<style>\u{FFFD} {}</style>" ),
 			'Comment text'         => array( "<!-- \x00 -->", "<!-- \u{FFFD} -->" ),
-
-			/*
-			 * Inside MathML text integration points and HTML integration points, text
-			 * follows HTML insertion mode rules: NULL bytes are stripped, not replaced.
-			 *
-			 * @see https://html.spec.whatwg.org/#mathml-text-integration-point
-			 * @see https://html.spec.whatwg.org/#html-integration-point
-			 */
-			'MathML integration point mi'                            => array( "<math><mi>one\x00two</mi></math>", '<math><mi>onetwo</mi></math>' ),
-			'MathML integration point mo'                            => array( "<math><mo>one\x00two</mo></math>", '<math><mo>onetwo</mo></math>' ),
-			'MathML integration point mn'                            => array( "<math><mn>one\x00two</mn></math>", '<math><mn>onetwo</mn></math>' ),
-			'MathML integration point ms'                            => array( "<math><ms>one\x00two</ms></math>", '<math><ms>onetwo</ms></math>' ),
-			'MathML integration point mtext'                         => array( "<math><mtext>one\x00two</mtext></math>", '<math><mtext>onetwo</mtext></math>' ),
-			'HTML integration point SVG foreignObject'               => array( "<svg><foreignObject>one\x00two</foreignObject></svg>", '<svg><foreignObject>onetwo</foreignObject></svg>' ),
-			'HTML integration point SVG desc'                        => array( "<svg><desc>one\x00two</desc></svg>", '<svg><desc>onetwo</desc></svg>' ),
-			'HTML integration point SVG title'                       => array( "<svg><title>one\x00two</title></svg>", '<svg><title>onetwo</title></svg>' ),
-			'HTML integration point MathML annotation-xml text/html'             => array( "<math><annotation-xml encoding='text/html'>one\x00two</annotation-xml></math>", '<math><annotation-xml encoding="text/html">onetwo</annotation-xml></math>' ),
-			'HTML integration point MathML annotation-xml application/xhtml+xml' => array( "<math><annotation-xml encoding='application/xhtml+xml'>one\x00two</annotation-xml></math>", '<math><annotation-xml encoding="application/xhtml+xml">onetwo</annotation-xml></math>' ),
-
-			// Non-integration-point annotation-xml uses foreign content rules: NULL bytes replaced.
-			'MathML annotation-xml other encoding'                   => array( "<math><annotation-xml encoding='text/plain'>one\x00two</annotation-xml></math>", "<math><annotation-xml encoding=\"text/plain\">one\u{FFFD}two</annotation-xml></math>" ),
 		);
 	}
 

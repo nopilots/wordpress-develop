@@ -1,26 +1,3 @@
-# Contributing
-
-## About this fork: No Pilots
-
-This is an **autonomous fork** of WordPress maintained by an AI agent system. Every commit, issue comment, PR review, and published Flight Log post on [nopilots.org](https://nopilots.org) is AI-generated. A single human operator ([@josephfusco](https://github.com/josephfusco)) oversees at the Executive layer.
-
-The crew has four primary identities:
-
-- **autopilot** — the coding agent that implements changes
-- **doc** — the code quality reviewer
-- **dalton** — the security reviewer
-- **pat** — the final decision maker (approves or requests changes)
-
-See [`SYSTEM_CARD.md`](./SYSTEM_CARD.md) for which models back each persona, what data the crew sends to the Models API, and how the system handles failure.
-
-### If you need a human
-
-If you need a human to look at something — a disagreement with an agent decision, a bug you don't trust the crew to handle, or anything else — apply the `needs:human` label to any issue or PR. The Executive layer will see it on its next run (Thursday 06:00 UTC) and respond. For urgent issues, tag `@josephfusco` in a comment.
-
-**If an agent closed your issue or rejected your PR and you disagree:** reopen it, apply `needs:human`, and leave a brief explanation. The Executive will review.
-
----
-
 # Welcome to WordPress Development!
 
 For the in-depth documentation, please visit the [Contributor Handbook](https://make.wordpress.org/core/handbook/contribute/).

@@ -258,17 +258,6 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 	 */
 	private $context_node = null;
 
-	/**
-	 * Form element pointer derived from the fragment context node.
-	 *
-	 * This is used to restore the parser state when seeking backwards.
-	 *
-	 * @since 6.9.0
-	 *
-	 * @var WP_HTML_Token|null
-	 */
-	private $context_form_element = null;
-
 	/*
 	 * Public Interface Functions
 	 */
@@ -570,7 +559,6 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 				$fragment_processor->state->form_element                = clone $element;
 				$fragment_processor->state->form_element->bookmark_name = null;
 				$fragment_processor->state->form_element->on_destroy    = null;
-				$fragment_processor->context_form_element               = clone $fragment_processor->state->form_element;
 				break;
 			}
 		}
@@ -1904,13 +1892,7 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 			/*
 			 * > A start tag whose tag name is "script"
 			 *
-			 * The adjusted insertion location is always the current location in "in head" mode
-			 * because foster parenting is never enabled in this insertion mode. Foster parenting
-			 * only applies in table-related insertion modes (e.g., "in table"), so the
-			 * "appropriate place for inserting a node" algorithm always returns the current node
-			 * (the HEAD element) as the insertion location.
-			 *
-			 * @see https://html.spec.whatwg.org/#appropriate-place-for-inserting-a-node
+			 * @todo Could the adjusted insertion location be anything other than the current location?
 			 */
 			case '+SCRIPT':
 				$this->insert_html_element( $this->state->current_token );
@@ -1940,13 +1922,7 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 			/*
 			 * > A start tag whose tag name is "template"
 			 *
-			 * The adjusted insertion location is always the current location in "in head" mode
-			 * because foster parenting is never enabled in this insertion mode. Foster parenting
-			 * only applies in table-related insertion modes (e.g., "in table"), so the
-			 * "appropriate place for inserting a node" algorithm always returns the current node
-			 * (the HEAD element) as the insertion location.
-			 *
-			 * @see https://html.spec.whatwg.org/#appropriate-place-for-inserting-a-node
+			 * @todo Could the adjusted insertion location be anything other than the current location?
 			 */
 			case '+TEMPLATE':
 				$this->state->active_formatting_elements->insert_marker();
@@ -2842,7 +2818,7 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 
 				$this->reconstruct_active_formatting_elements();
 				$this->insert_html_element( $this->state->current_token );
-				$this->push_active_formatting_element( $this->state->current_token );
+				$this->state->active_formatting_elements->push( $this->state->current_token );
 				return true;
 
 			/*
@@ -2863,7 +2839,7 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 			case '+U':
 				$this->reconstruct_active_formatting_elements();
 				$this->insert_html_element( $this->state->current_token );
-				$this->push_active_formatting_element( $this->state->current_token );
+				$this->state->active_formatting_elements->push( $this->state->current_token );
 				return true;
 
 			/*
@@ -2879,7 +2855,7 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 				}
 
 				$this->insert_html_element( $this->state->current_token );
-				$this->push_active_formatting_element( $this->state->current_token );
+				$this->state->active_formatting_elements->push( $this->state->current_token );
 				return true;
 
 			/*
@@ -5691,10 +5667,6 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 					)
 				);
 
-				$this->state->form_element = isset( $this->context_form_element )
-					? clone $this->context_form_element
-					: null;
-
 				$this->change_parsing_namespace(
 					$this->context_node->integration_node_type
 						? 'html'
@@ -6347,38 +6319,6 @@ class WP_HTML_Processor extends WP_HTML_Tag_Processor {
 	 */
 	private function insert_html_element( WP_HTML_Token $token ): void {
 		$this->state->stack_of_open_elements->push( $token );
-	}
-
-	/**
-	 * Pushes a formatting element onto the list of active formatting elements.
-	 *
-	 * Before pushing, this method collects the token's parsed attributes and stores
-	 * them on the token as `comparable_attributes` (a sorted attribute name/value
-	 * array). The active formatting elements list uses this to enforce the
-	 * "Noah's Ark clause": at most three of any equivalent formatting element may
-	 * exist between any two markers (or from the start of the list if there are none).
-	 *
-	 * @since 6.8.0
-	 * @ignore
-	 *
-	 * @see https://html.spec.whatwg.org/#push-onto-the-list-of-active-formatting-elements
-	 * @see WP_HTML_Active_Formatting_Elements::push()
-	 *
-	 * @param WP_HTML_Token $token Push this token onto the list of active formatting elements.
-	 */
-	private function push_active_formatting_element( WP_HTML_Token $token ): void {
-		$attribute_names = $this->get_attribute_names_with_prefix( '' );
-		$attributes      = array();
-
-		if ( is_array( $attribute_names ) ) {
-			foreach ( $attribute_names as $attribute_name ) {
-				$attributes[ $attribute_name ] = $this->get_attribute( $attribute_name );
-			}
-			ksort( $attributes );
-		}
-
-		$token->comparable_attributes = $attributes;
-		$this->state->active_formatting_elements->push( $token );
 	}
 
 	/**

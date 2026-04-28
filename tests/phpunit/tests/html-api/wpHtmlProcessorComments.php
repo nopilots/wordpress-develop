@@ -41,12 +41,8 @@ class Tests_HtmlApi_WpHtmlProcessorComments extends WP_UnitTestCase {
 			'Invalid HTML comment !'         => array( '<! Bang opener >', WP_HTML_Processor::COMMENT_AS_INVALID_HTML, ' Bang opener ' ),
 			'Invalid HTML comment ?'         => array( '<? Question opener >', WP_HTML_Processor::COMMENT_AS_INVALID_HTML, ' Question opener ' ),
 			'CDATA comment'                  => array( '<![CDATA[ cdata body ]]>', WP_HTML_Processor::COMMENT_AS_CDATA_LOOKALIKE, ' cdata body ' ),
-			'Processing instruction comment'        => array( '<?pi-target Instruction body. ?>', WP_HTML_Processor::COMMENT_AS_PI_NODE_LOOKALIKE, ' Instruction body. ', 'pi-target' ),
-			'Processing instruction php'            => array( '<?php const HTML_COMMENT = true; ?>', WP_HTML_Processor::COMMENT_AS_PI_NODE_LOOKALIKE, ' const HTML_COMMENT = true; ', 'php' ),
-			'Processing instruction xmlfoo target'  => array( '<?xmlfoo data ?>', WP_HTML_Processor::COMMENT_AS_PI_NODE_LOOKALIKE, ' data ', 'xmlfoo' ),
-			'XML declaration (lowercase xml)'       => array( '<?xml version="1.0"?>', WP_HTML_Processor::COMMENT_AS_INVALID_HTML, 'xml version="1.0"?' ),
-			'XML declaration (uppercase XML)'       => array( '<?XML version=""?>', WP_HTML_Processor::COMMENT_AS_INVALID_HTML, 'XML version=""?' ),
-			'XML declaration (mixed case Xml)'      => array( '<?Xml data?>', WP_HTML_Processor::COMMENT_AS_INVALID_HTML, 'Xml data?' ),
+			'Processing instriction comment' => array( '<?pi-target Instruction body. ?>', WP_HTML_Processor::COMMENT_AS_PI_NODE_LOOKALIKE, ' Instruction body. ', 'pi-target' ),
+			'Processing instriction php'     => array( '<?php const HTML_COMMENT = true; ?>', WP_HTML_Processor::COMMENT_AS_PI_NODE_LOOKALIKE, ' const HTML_COMMENT = true; ', 'php' ),
 		);
 	}
 

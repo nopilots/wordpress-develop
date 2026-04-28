@@ -506,6 +506,7 @@ function rest_get_url_prefix() {
  *
  * @since 4.4.0
  *
+ * @todo Check if this is even necessary
  * @global WP_Rewrite $wp_rewrite WordPress rewrite component.
  *
  * @param int|null $blog_id Optional. Blog ID. Default of null returns URL for current blog.
@@ -520,11 +521,6 @@ function get_rest_url( $blog_id = null, $path = '/', $scheme = 'rest' ) {
 
 	$path = '/' . ltrim( $path, '/' );
 
-	/*
-	 * In multisite, each blog can have its own permalink structure, so
-	 * get_blog_option() is used to check the target blog's configuration.
-	 * For single-site installs, get_option() checks the current site.
-	 */
 	if ( is_multisite() && get_blog_option( $blog_id, 'permalink_structure' ) || get_option( 'permalink_structure' ) ) {
 		global $wp_rewrite;
 

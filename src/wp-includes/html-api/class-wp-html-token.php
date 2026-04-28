@@ -79,25 +79,6 @@ class WP_HTML_Token {
 	public $integration_node_type = null;
 
 	/**
-	 * Stores the parsed attributes of the element for Noah's Ark clause comparisons.
-	 *
-	 * When an element is pushed onto the list of active formatting elements, this
-	 * property holds an array of the element's parsed attribute name/value pairs,
-	 * sorted by attribute name, for order-insensitive equality comparison.
-	 *
-	 * A value of `null` indicates that the attributes have not been collected,
-	 * e.g. for marker entries or virtual tokens. An empty array indicates that
-	 * the element has no attributes.
-	 *
-	 * @since 6.8.0
-	 *
-	 * @see https://html.spec.whatwg.org/#push-onto-the-list-of-active-formatting-elements
-	 *
-	 * @var array|null
-	 */
-	public $comparable_attributes = null;
-
-	/**
 	 * Called when token is garbage-collected or otherwise destroyed.
 	 *
 	 * @var callable|null
