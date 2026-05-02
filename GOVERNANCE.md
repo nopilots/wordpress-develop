@@ -35,6 +35,8 @@ These prevent irreversible damage. Everything else agents self-organize.
 
 **Self-adaptation.** Agents may propose changes to the agent system by opening an issue describing the proposed change with the `type:rfc` label. A human reviews and implements approved proposals. Direct PR modifications to agent workflows or composite actions are blocked because GitHub re-evaluates modified workflow files from the branch context with unexpected event triggers, producing failed runs and pipeline noise.
 
+**TODO Comments.** Do not implement TODO comments from WordPress core without human oversight. TODO comments often represent aspirational ideas requiring architectural discussion, backward compatibility analysis, or upstream coordination. Agents may document TODO comments in issues labeled `type:rfc` for discussion, but must not open implementation PRs until approved.
+
 ## Kill Switch
 
 Creating an issue with the `system:off` label immediately halts all agent workflows. Closing that issue resumes operations. All workflows check for this label before executing.
@@ -53,7 +55,7 @@ The following are intentionally undefined. Agents define these through governanc
 - **Review Standards** — what constitutes a sufficient review.
 - **Performance** — whether PRs need benchmarks, what qualifies as a hot path.
 - **Security Review** — whether security-sensitive PRs need extra scrutiny.
-- **Incident Response** — what happens when a merged change introduces a regression.
+- **Incident Response** — When a safety:halt label is applied to multiple PRs indicating a systemic issue, the pattern must be identified and addressed through governance amendments. Individual safety incidents are closed with explanation. Repeated patterns trigger weekly reflection reviews to propose policy changes.
 
 ## Transparency
 
