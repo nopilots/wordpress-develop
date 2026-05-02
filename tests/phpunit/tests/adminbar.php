@@ -838,4 +838,709 @@ class Tests_AdminBar extends WP_UnitTestCase {
 		$this->assertTrue( isset( $admin_bar->menu ), 'WP_Admin_Bar::$menu should be set.' );
 		$this->assertSame( array(), $admin_bar->menu, 'WP_Admin_Bar::$menu should be equal to an empty array.' );
 	}
+
+	/**
+	 * Test initialize() method sets up user object correctly for logged-in users.
+	 *
+	 * @covers WP_Admin_Bar::initialize
+	 */
+	public function test_initialize_sets_user_for_logged_in_user() {
+		wp_set_current_user( self::$editor_id );
+
+		$admin_bar = new WP_Admin_Bar();
+		$admin_bar->initialize();
+
+		$this->assertInstanceOf( 'stdClass', $admin_bar->user );
+		$this->assertIsArray( $admin_bar->user->blogs );
+		$this->assertNotEmpty( $admin_bar->user->blogs );
+	}
+
+	/**
+	 * Test initialize() method for non-logged-in users.
+	 *
+	 * @covers WP_Admin_Bar::initialize
+	 */
+	public function test_initialize_creates_empty_user_for_logged_out() {
+		wp_set_current_user( 0 );
+
+		$admin_bar = new WP_Admin_Bar();
+		$admin_bar->initialize();
+
+		$this->assertInstanceOf( 'stdClass', $admin_bar->user );
+	}
+
+	/**
+	 * Test add_node() with empty ID generates deprecated warning.
+	 *
+	 * @covers WP_Admin_Bar::add_node
+	 */
+	public function test_add_node_with_empty_id_triggers_doing_it_wrong() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$this->setExpectedIncorrectUsage( 'WP_Admin_Bar::add_node' );
+		$admin_bar->add_node(
+			array(
+				'title' => 'Test Node',
+			)
+		);
+
+		$node = $admin_bar->get_node( 'test-node' );
+		$this->assertNotNull( $node );
+	}
+
+	/**
+	 * Test add_node() with no title and no ID does nothing.
+	 *
+	 * @covers WP_Admin_Bar::add_node
+	 */
+	public function test_add_node_with_no_id_no_title_does_nothing() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$admin_bar->add_node( array() );
+
+		$nodes = $admin_bar->get_nodes();
+		$this->assertNull( $nodes );
+	}
+
+	/**
+	 * Test add_node() converts object arguments to array.
+	 *
+	 * @covers WP_Admin_Bar::add_node
+	 */
+	public function test_add_node_converts_object_to_array() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$node_object       = new stdClass();
+		$node_object->id   = 'test-object-node';
+		$node_object->title = 'Test Object';
+
+		$admin_bar->add_node( $node_object );
+
+		$node = $admin_bar->get_node( 'test-object-node' );
+		$this->assertNotNull( $node );
+		$this->assertSame( 'Test Object', $node->title );
+	}
+
+	/**
+	 * Test add_node() with deprecated parent arguments.
+	 *
+	 * @covers WP_Admin_Bar::add_node
+	 */
+	public function test_add_node_with_deprecated_parent() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$this->setExpectedDeprecated( 'WP_Admin_Bar::add_node' );
+
+		$admin_bar->add_node(
+			array(
+				'id'     => 'test-child',
+				'parent' => 'my-account-with-avatar',
+				'title'  => 'Test Child',
+			)
+		);
+
+		$node = $admin_bar->get_node( 'test-child' );
+		$this->assertSame( 'my-account', $node->parent );
+	}
+
+	/**
+	 * Test add_node() with deprecated 'my-blogs' parent.
+	 *
+	 * @covers WP_Admin_Bar::add_node
+	 */
+	public function test_add_node_with_deprecated_my_blogs_parent() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$this->setExpectedDeprecated( 'WP_Admin_Bar::add_node' );
+
+		$admin_bar->add_node(
+			array(
+				'id'     => 'test-child',
+				'parent' => 'my-blogs',
+				'title'  => 'Test Child',
+			)
+		);
+
+		$node = $admin_bar->get_node( 'test-child' );
+		$this->assertSame( 'my-sites', $node->parent );
+	}
+
+	/**
+	 * Test get_node() returns null for non-existent node.
+	 *
+	 * @covers WP_Admin_Bar::get_node
+	 */
+	public function test_get_node_returns_null_for_non_existent_node() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$node = $admin_bar->get_node( 'non-existent-node' );
+		$this->assertNull( $node );
+	}
+
+	/**
+	 * Test get_node() returns cloned object.
+	 *
+	 * @covers WP_Admin_Bar::get_node
+	 */
+	public function test_get_node_returns_cloned_object() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$admin_bar->add_node(
+			array(
+				'id'    => 'test-clone',
+				'title' => 'Test Clone',
+			)
+		);
+
+		$node1 = $admin_bar->get_node( 'test-clone' );
+		$node2 = $admin_bar->get_node( 'test-clone' );
+
+		$this->assertNotSame( $node1, $node2, 'get_node() should return a clone, not the same object.' );
+		$this->assertEquals( $node1, $node2, 'Cloned nodes should be equal.' );
+	}
+
+	/**
+	 * Test get_node() with empty ID returns root node.
+	 *
+	 * @covers WP_Admin_Bar::get_node
+	 */
+	public function test_get_node_with_empty_id_returns_null() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$node = $admin_bar->get_node( '' );
+		$this->assertNull( $node );
+	}
+
+	/**
+	 * Test get_nodes() returns null when no nodes exist.
+	 *
+	 * @covers WP_Admin_Bar::get_nodes
+	 */
+	public function test_get_nodes_returns_null_when_empty() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$nodes = $admin_bar->get_nodes();
+		$this->assertNull( $nodes );
+	}
+
+	/**
+	 * Test get_nodes() returns cloned nodes.
+	 *
+	 * @covers WP_Admin_Bar::get_nodes
+	 */
+	public function test_get_nodes_returns_cloned_nodes() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$admin_bar->add_node(
+			array(
+				'id'    => 'test-node-1',
+				'title' => 'Test Node 1',
+			)
+		);
+
+		$nodes1 = $admin_bar->get_nodes();
+		$nodes2 = $admin_bar->get_nodes();
+
+		$this->assertNotSame( $nodes1['test-node-1'], $nodes2['test-node-1'], 'get_nodes() should return clones.' );
+	}
+
+	/**
+	 * Test get_nodes() returns null after binding.
+	 *
+	 * @covers WP_Admin_Bar::get_nodes
+	 * @covers WP_Admin_Bar::_bind
+	 */
+	public function test_get_nodes_returns_null_after_bind() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$admin_bar->add_node(
+			array(
+				'id'    => 'test-node',
+				'title' => 'Test Node',
+			)
+		);
+
+		$admin_bar->render();
+
+		$nodes = $admin_bar->get_nodes();
+		$this->assertNull( $nodes, 'get_nodes() should return null after binding.' );
+	}
+
+	/**
+	 * Test add_group() creates a group node.
+	 *
+	 * @covers WP_Admin_Bar::add_group
+	 */
+	public function test_add_group_creates_group_node() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$admin_bar->add_group(
+			array(
+				'id'     => 'test-group',
+				'parent' => 'root',
+			)
+		);
+
+		$node = $admin_bar->get_node( 'test-group' );
+		$this->assertNotNull( $node );
+		$this->assertTrue( $node->group );
+	}
+
+	/**
+	 * Test add_group() with meta data.
+	 *
+	 * @covers WP_Admin_Bar::add_group
+	 */
+	public function test_add_group_with_meta() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$admin_bar->add_group(
+			array(
+				'id'   => 'test-group',
+				'meta' => array( 'class' => 'custom-class' ),
+			)
+		);
+
+		$node = $admin_bar->get_node( 'test-group' );
+		$this->assertSame( 'custom-class', $node->meta['class'] );
+	}
+
+	/**
+	 * Test remove_node() removes a node.
+	 *
+	 * @covers WP_Admin_Bar::remove_node
+	 */
+	public function test_remove_node_removes_node() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$admin_bar->add_node(
+			array(
+				'id'    => 'test-remove',
+				'title' => 'Test Remove',
+			)
+		);
+
+		$this->assertNotNull( $admin_bar->get_node( 'test-remove' ) );
+
+		$admin_bar->remove_node( 'test-remove' );
+
+		$this->assertNull( $admin_bar->get_node( 'test-remove' ) );
+	}
+
+	/**
+	 * Test remove_node() on non-existent node does nothing.
+	 *
+	 * @covers WP_Admin_Bar::remove_node
+	 */
+	public function test_remove_node_on_non_existent_does_nothing() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$admin_bar->remove_node( 'non-existent' );
+
+		$nodes = $admin_bar->get_nodes();
+		$this->assertNull( $nodes );
+	}
+
+	/**
+	 * Test add_menu() is an alias for add_node().
+	 *
+	 * @covers WP_Admin_Bar::add_menu
+	 */
+	public function test_add_menu_is_alias_for_add_node() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$admin_bar->add_menu(
+			array(
+				'id'    => 'test-menu',
+				'title' => 'Test Menu',
+			)
+		);
+
+		$node = $admin_bar->get_node( 'test-menu' );
+		$this->assertNotNull( $node );
+		$this->assertSame( 'Test Menu', $node->title );
+	}
+
+	/**
+	 * Test remove_menu() is an alias for remove_node().
+	 *
+	 * @covers WP_Admin_Bar::remove_menu
+	 */
+	public function test_remove_menu_is_alias_for_remove_node() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$admin_bar->add_node(
+			array(
+				'id'    => 'test-menu',
+				'title' => 'Test Menu',
+			)
+		);
+
+		$admin_bar->remove_menu( 'test-menu' );
+
+		$this->assertNull( $admin_bar->get_node( 'test-menu' ) );
+	}
+
+	/**
+	 * Test recursive_render() is deprecated.
+	 *
+	 * @covers WP_Admin_Bar::recursive_render
+	 */
+	public function test_recursive_render_is_deprecated() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$node       = new stdClass();
+		$node->type = 'item';
+		$node->id   = 'test-recursive';
+		$node->title = 'Test';
+		$node->href = '#';
+		$node->parent = 'root';
+		$node->children = array();
+		$node->meta = array();
+
+		$this->setExpectedDeprecated( 'WP_Admin_Bar::recursive_render' );
+
+		ob_start();
+		$admin_bar->recursive_render( 'test-recursive', $node );
+		$output = ob_get_clean();
+
+		$this->assertNotEmpty( $output );
+	}
+
+	/**
+	 * Test _bind() creates root node.
+	 *
+	 * @covers WP_Admin_Bar::_bind
+	 */
+	public function test_bind_creates_root_node() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$admin_bar->add_node(
+			array(
+				'id'    => 'test-node',
+				'title' => 'Test Node',
+			)
+		);
+
+		$reflection = new ReflectionClass( $admin_bar );
+		$bind_method = $reflection->getMethod( '_bind' );
+		$bind_method->setAccessible( true );
+
+		$root = $bind_method->invoke( $admin_bar );
+
+		$this->assertNotNull( $root );
+		$this->assertSame( 'root', $root->id );
+	}
+
+	/**
+	 * Test _bind() assigns orphan nodes to root.
+	 *
+	 * @covers WP_Admin_Bar::_bind
+	 */
+	public function test_bind_assigns_orphans_to_root() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$admin_bar->add_node(
+			array(
+				'id'    => 'orphan-node',
+				'title' => 'Orphan Node',
+			)
+		);
+
+		$reflection = new ReflectionClass( $admin_bar );
+		$bind_method = $reflection->getMethod( '_bind' );
+		$bind_method->setAccessible( true );
+
+		$root = $bind_method->invoke( $admin_bar );
+
+		$this->assertNotEmpty( $root->children );
+		$this->assertSame( 'orphan-node', $root->children[0]->id );
+	}
+
+	/**
+	 * Test _bind() only runs once.
+	 *
+	 * @covers WP_Admin_Bar::_bind
+	 */
+	public function test_bind_only_runs_once() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$admin_bar->add_node(
+			array(
+				'id'    => 'test-node',
+				'title' => 'Test Node',
+			)
+		);
+
+		$reflection = new ReflectionClass( $admin_bar );
+		$bind_method = $reflection->getMethod( '_bind' );
+		$bind_method->setAccessible( true );
+
+		$root1 = $bind_method->invoke( $admin_bar );
+		$root2 = $bind_method->invoke( $admin_bar );
+
+		$this->assertNotNull( $root1 );
+		$this->assertNull( $root2, '_bind() should return null on second call.' );
+	}
+
+	/**
+	 * Test render() generates output.
+	 *
+	 * @covers WP_Admin_Bar::render
+	 */
+	public function test_render_generates_output() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$admin_bar->add_node(
+			array(
+				'id'    => 'test-render',
+				'title' => 'Test Render',
+			)
+		);
+
+		ob_start();
+		$admin_bar->render();
+		$output = ob_get_clean();
+
+		$this->assertNotEmpty( $output );
+		$this->assertStringContainsString( 'wpadminbar', $output );
+		$this->assertStringContainsString( 'Test Render', $output );
+	}
+
+	/**
+	 * Test render() includes mobile class on mobile devices.
+	 *
+	 * @covers WP_Admin_Bar::render
+	 */
+	public function test_render_includes_mobile_class() {
+		add_filter( 'wp_is_mobile', '__return_true' );
+
+		$admin_bar = new WP_Admin_Bar();
+
+		$admin_bar->add_node(
+			array(
+				'id'    => 'test-mobile',
+				'title' => 'Test Mobile',
+			)
+		);
+
+		ob_start();
+		$admin_bar->render();
+		$output = ob_get_clean();
+
+		remove_filter( 'wp_is_mobile', '__return_true' );
+
+		$this->assertStringContainsString( 'mobile', $output );
+	}
+
+	/**
+	 * Test render() with nested items creates default group.
+	 *
+	 * @covers WP_Admin_Bar::render
+	 * @covers WP_Admin_Bar::_bind
+	 */
+	public function test_render_nested_items_creates_default_group() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$admin_bar->add_node(
+			array(
+				'id'    => 'parent-item',
+				'title' => 'Parent Item',
+			)
+		);
+
+		$admin_bar->add_node(
+			array(
+				'id'     => 'child-item',
+				'parent' => 'parent-item',
+				'title'  => 'Child Item',
+			)
+		);
+
+		ob_start();
+		$admin_bar->render();
+		$output = ob_get_clean();
+
+		$this->assertStringContainsString( 'parent-item-default', $output );
+	}
+
+	/**
+	 * Test add_node() with all meta attributes.
+	 *
+	 * @covers WP_Admin_Bar::add_node
+	 */
+	public function test_add_node_with_all_meta_attributes() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$admin_bar->add_node(
+			array(
+				'id'    => 'test-meta',
+				'title' => 'Test Meta',
+				'href'  => 'http://example.com',
+				'meta'  => array(
+					'class'      => 'custom-class',
+					'rel'        => 'nofollow',
+					'lang'       => 'en',
+					'dir'        => 'ltr',
+					'onclick'    => 'alert("test")',
+					'target'     => '_blank',
+					'title'      => 'Custom Title',
+					'tabindex'   => 1,
+					'menu_title' => 'Menu Title',
+				),
+			)
+		);
+
+		$node = $admin_bar->get_node( 'test-meta' );
+		$this->assertSame( 'custom-class', $node->meta['class'] );
+		$this->assertSame( 'nofollow', $node->meta['rel'] );
+		$this->assertSame( 'en', $node->meta['lang'] );
+		$this->assertSame( 'ltr', $node->meta['dir'] );
+		$this->assertSame( 'alert("test")', $node->meta['onclick'] );
+		$this->assertSame( '_blank', $node->meta['target'] );
+		$this->assertSame( 'Custom Title', $node->meta['title'] );
+		$this->assertSame( 1, $node->meta['tabindex'] );
+		$this->assertSame( 'Menu Title', $node->meta['menu_title'] );
+	}
+
+	/**
+	 * Test node with href renders as anchor tag.
+	 *
+	 * @covers WP_Admin_Bar::render
+	 * @covers WP_Admin_Bar::_render_item
+	 */
+	public function test_node_with_href_renders_as_anchor() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$admin_bar->add_node(
+			array(
+				'id'    => 'test-link',
+				'title' => 'Test Link',
+				'href'  => 'http://example.com',
+			)
+		);
+
+		ob_start();
+		$admin_bar->render();
+		$output = ob_get_clean();
+
+		$this->assertStringContainsString( '<a', $output );
+		$this->assertStringContainsString( 'href=\'http://example.com\'', $output );
+	}
+
+	/**
+	 * Test node without href renders as div.
+	 *
+	 * @covers WP_Admin_Bar::render
+	 * @covers WP_Admin_Bar::_render_item
+	 */
+	public function test_node_without_href_renders_as_div() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$admin_bar->add_node(
+			array(
+				'id'    => 'test-no-link',
+				'title' => 'Test No Link',
+			)
+		);
+
+		ob_start();
+		$admin_bar->render();
+		$output = ob_get_clean();
+
+		$this->assertStringContainsString( 'ab-empty-item', $output );
+	}
+
+	/**
+	 * Test parent node with children includes arrow and menupop class.
+	 *
+	 * @covers WP_Admin_Bar::render
+	 * @covers WP_Admin_Bar::_render_item
+	 */
+	public function test_parent_node_with_children_includes_arrow() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$admin_bar->add_node(
+			array(
+				'id'    => 'parent',
+				'title' => 'Parent',
+			)
+		);
+
+		$admin_bar->add_node(
+			array(
+				'id'     => 'child',
+				'parent' => 'parent',
+				'title'  => 'Child',
+			)
+		);
+
+		ob_start();
+		$admin_bar->render();
+		$output = ob_get_clean();
+
+		$this->assertStringContainsString( 'menupop', $output );
+		$this->assertStringContainsString( 'aria-expanded="false"', $output );
+	}
+
+	/**
+	 * Test node with custom HTML in meta.
+	 *
+	 * @covers WP_Admin_Bar::render
+	 * @covers WP_Admin_Bar::_render_item
+	 */
+	public function test_node_with_custom_html_in_meta() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$admin_bar->add_node(
+			array(
+				'id'    => 'test-html',
+				'title' => 'Test HTML',
+				'meta'  => array(
+					'html' => '<span class="custom">Custom HTML</span>',
+				),
+			)
+		);
+
+		ob_start();
+		$admin_bar->render();
+		$output = ob_get_clean();
+
+		$this->assertStringContainsString( '<span class="custom">Custom HTML</span>', $output );
+	}
+
+	/**
+	 * Test _bind() wraps nested groups in container.
+	 *
+	 * @covers WP_Admin_Bar::_bind
+	 */
+	public function test_bind_wraps_nested_groups_in_container() {
+		$admin_bar = new WP_Admin_Bar();
+
+		$admin_bar->add_group(
+			array(
+				'id' => 'parent-group',
+			)
+		);
+
+		$admin_bar->add_group(
+			array(
+				'id'     => 'child-group',
+				'parent' => 'parent-group',
+			)
+		);
+
+		$reflection = new ReflectionClass( $admin_bar );
+		$bind_method = $reflection->getMethod( '_bind' );
+		$bind_method->setAccessible( true );
+
+		$root = $bind_method->invoke( $admin_bar );
+
+		$nodes_method = $reflection->getMethod( '_get_nodes' );
+		$nodes_method->setAccessible( true );
+		$nodes = $nodes_method->invoke( $admin_bar );
+
+		$this->assertArrayHasKey( 'parent-group-container', $nodes );
+		$this->assertSame( 'container', $nodes['parent-group-container']->type );
+	}
 }
