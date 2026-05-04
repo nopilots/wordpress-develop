@@ -1,10 +1,10 @@
 # Architecture
 
-Auto-generated on 2026-04-08 by the Architect workflow. Do not edit manually.
+Auto-generated on 2026-05-04 by the Architect workflow. Do not edit manually.
 
 ## System Overview
 
-**20 agent workflows** across 3 tiers, plus 1 composite action(s).
+**23 agent workflows** across 3 tiers, plus 3 composite action(s).
 
 ## Diagram
 
@@ -16,26 +16,29 @@ graph TD
     end
 
     subgraph "Tier 2 — Supervisors"
-        METRICS["Metrics"]
         QA["QA"]
         TRIAGE["Triage"]
     end
 
     subgraph "Tier 1 — Workers"
         ARCHITECT["Architect"]
+        AUDITOR["Integrity Auditor"]
         CLEANUP["Post-Merge"]
+        CODING-STANDARDS["Coding Standards (Agent)"]
+        COMMANDER["Commander"]
         COORDINATOR["Coordinator"]
-        DISCUSS["Crew Discussion"]
         GUARD["Branch Guard"]
         HEALTH-CHECK["Health Check"]
-        ISSUE-GENERATOR["Issue Generator"]
+        INNOVATOR["Innovator"]
         LEARN["Learn"]
         MERGE["Auto-Merge"]
+        NOTIFY["Notify Human"]
+        PHPSTAN["Static Analysis (Agent)"]
+        PHPUNIT["PHPUnit (Agent)"]
         PROTECTED-FILES["File Guard"]
         READY["Draft Converter"]
         REFLECTION["SITREP"]
         REVIEW["Preflight Review"]
-        REVISE["Revise"]
         SAFETY["Safety"]
         SYNC-UPSTREAM["Upstream Sync"]
     end
@@ -55,7 +58,9 @@ graph TD
     METRICS -->|data| EXECUTIVE
     EXECUTIVE -->|governance PR| REVIEW
 
+    %% Composite action: escalate-to-human
     %% Composite action: publish-to-flight-log
+    %% Composite action: read-from-flight-log
 ```
 
 ## Workflows
@@ -63,29 +68,34 @@ graph TD
 | Name | File | Tier | Triggers | Schedule |
 |---|---|---|---|---|
 | Architect | `agent-architect.yml` | Worker | schedule, manual, push | `0 0 * * 1` |
+| Integrity Auditor | `agent-auditor.yml` | Worker | schedule, manual | `0 5 * * *` |
 | Post-Merge | `agent-cleanup.yml` | Worker | PR event | — |
+| Coding Standards (Agent) | `agent-coding-standards.yml` | Worker | manual | — |
+| Commander | `agent-commander.yml` | Worker | issue event | — |
 | Coordinator | `agent-coordinator.yml` | Worker | schedule, manual, issue event | `0 * * * *` |
-| Crew Discussion | `agent-discuss.yml` | Worker | manual, discussion | — |
 | Executive | `agent-executive.yml` | Executive | schedule, manual | `0 6 * * 4` |
 | Branch Guard | `agent-guard.yml` | Worker | PR event | — |
 | Health Check | `agent-health-check.yml` | Worker | schedule, manual | `0 6 * * *` |
-| Issue Generator | `agent-issue-generator.yml` | Worker | schedule, manual | `0 0 * * *` |
+| Innovator | `agent-innovator.yml` | Worker | schedule, manual | `0 0 * * 2,6` |
 | Learn | `agent-learn.yml` | Worker | manual, PR event, issue event | — |
-| Auto-Merge | `agent-merge.yml` | Worker | review, check_suite | — |
-| Metrics | `agent-metrics.yml` | Supervisor | schedule, manual | `0 2 * * 3` |
+| Auto-Merge | `agent-merge.yml` | Worker | schedule, manual, review, check_suite | `*/30 * * * *` |
+| Notify Human | `agent-notify.yml` | Worker | issue event | — |
+| Static Analysis (Agent) | `agent-phpstan.yml` | Worker | manual | — |
+| PHPUnit (Agent) | `agent-phpunit.yml` | Worker | manual | — |
 | File Guard | `agent-protected-files.yml` | Worker | PR event | — |
 | QA | `agent-qa.yml` | Supervisor | schedule, manual, push | `0 4 * * *` |
 | Draft Converter | `agent-ready.yml` | Worker | schedule, manual, check_suite | `*/10 * * * *` |
-| SITREP | `agent-reflection.yml` | Worker | schedule, manual | `0 0 * * 3,6` |
-| Preflight Review | `agent-review.yml` | Worker | manual, PR event | — |
-| Revise | `agent-revise.yml` | Worker | review | — |
-| Safety | `agent-safety.yml` | Worker | manual, PR event, check_suite | — |
+| SITREP | `agent-reflection.yml` | Worker | schedule, manual | `0 0 * * 5` |
+| Preflight Review | `agent-review.yml` | Worker | manual, PR event, check_suite | — |
+| Safety | `agent-safety.yml` | Worker | schedule, manual, PR event, check_suite | `0 * * * *` |
 | Upstream Sync | `agent-sync-upstream.yml` | Worker | schedule, manual | `0 3,9,15,21 * * *` |
 | Triage | `agent-triage.yml` | Supervisor | manual, issue event | — |
 
 ## Composite Actions
 
+- `escalate-to-human`
 - `publish-to-flight-log`
+- `read-from-flight-log`
 
 ## Review Personas
 
