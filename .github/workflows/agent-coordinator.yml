@@ -86,7 +86,9 @@ jobs:
               p.labels.some(l => l.name === 'safety:halt')
             );
             const freshHalts = haltedPRs.filter(p => {
-              const haltAge = Date.now() - new Date(p.updated_at).getTime();
+              // Use created_at, not updated_at — Safety's periodic checks keep
+              // resetting updated_at, preventing halts from ever aging out.
+              const haltAge = Date.now() - new Date(p.created_at).getTime();
               return haltAge < 24 * 60 * 60 * 1000;
             });
             if (freshHalts.length >= 2) {
