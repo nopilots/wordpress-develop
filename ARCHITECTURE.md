@@ -1,6 +1,6 @@
 # Architecture
 
-Auto-generated on 2026-05-04 by the Architect workflow. Do not edit manually.
+Auto-generated on 2026-05-05 by the Architect workflow. Do not edit manually.
 
 ## System Overview
 
