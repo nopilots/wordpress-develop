@@ -3008,6 +3008,8 @@ class Tests_WP_Customize_Manager extends WP_UnitTestCase {
 		$this->assertSame( $preview_url, $this->manager->get_preview_url() );
 		$this->manager->set_preview_url( 'http://illegalsite.example.com/food/' );
 		$this->assertSame( home_url( '/' ), $this->manager->get_preview_url() );
+		$this->manager->set_preview_url( 'javascript:alert(1)' );
+		$this->assertSame( home_url( '/' ), $this->manager->get_preview_url() );
 	}
 
 	/**
@@ -3682,6 +3684,17 @@ class Tests_WP_Customize_Manager extends WP_UnitTestCase {
 			$sanitized = $setting->sanitize( $whitespace . $video_url . $whitespace );
 			$this->assertSame( $video_url, $sanitized );
 		}
+	}
+
+	/**
+	 * @ticket 39125
+	 */
+	public function test_sanitize_background_image_setting_strips_unsafe_schemes() {
+		$this->manager->register_controls();
+		$setting = $this->manager->get_setting( 'background_image' );
+
+		$this->assertInstanceOf( 'WP_Customize_Setting', $setting );
+		$this->assertSame( '', $this->manager->_sanitize_background_setting( 'javascript:alert(1)', $setting ) );
 	}
 }
 
